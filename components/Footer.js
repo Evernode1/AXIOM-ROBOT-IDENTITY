@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Cpu, Github, ExternalLink } from 'lucide-react';
+import { Cpu, ExternalLink } from 'lucide-react';
 
 export default function Footer() {
   return (
@@ -31,10 +31,7 @@ export default function Footer() {
               Protocol
             </div>
             {['Registry', 'Memory Vault', 'Fleet Dashboard', 'PoPW Submit'].map(l => (
-              <Link key={l} href={`/${l.split(' ')[0].toLowerCase()}`} style={{ display: 'block', fontSize: '0.82rem', color: '#6A6560', textDecoration: 'none', marginBottom: '0.5rem' }}
-                onMouseEnter={e => e.target.style.color = '#F0A500'}
-                onMouseLeave={e => e.target.style.color = '#6A6560'}
-              >
+              <Link key={l} href={`/${l.split(' ')[0].toLowerCase()}`} className="axiom-footer-link">
                 {l}
               </Link>
             ))}
@@ -50,11 +47,7 @@ export default function Footer() {
               { label: 'Builder Program', href: 'https://subnets.testnet.konnex.world/builders' },
               { label: 'Documentation', href: '#' },
             ].map(l => (
-              <a key={l.label} href={l.href} target="_blank" rel="noopener noreferrer"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: '#6A6560', textDecoration: 'none', marginBottom: '0.5rem' }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#F0A500'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#6A6560'; }}
-              >
+              <a key={l.label} href={l.href} target="_blank" rel="noopener noreferrer" className="axiom-footer-link" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 {l.label} <ExternalLink size={10} />
               </a>
             ))}
@@ -96,6 +89,18 @@ export default function Footer() {
           </span>
         </div>
       </div>
+
+      <style>{`
+        .axiom-footer-link {
+          display: block;
+          font-size: 0.82rem;
+          color: #6A6560;
+          text-decoration: none;
+          margin-bottom: 0.5rem;
+          transition: color 0.2s;
+        }
+        .axiom-footer-link:hover { color: #F0A500; }
+      `}</style>
     </footer>
   );
 }
