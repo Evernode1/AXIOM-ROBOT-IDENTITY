@@ -73,17 +73,10 @@ export default function Navbar() {
           {/* Desktop links */}
           <div style={S.navLinks} className="hide-mobile">
             {links.map(l => (
-              <Link key={l.href} href={l.href} style={{
-                fontFamily: "'Space Mono', monospace",
-                fontSize: '0.68rem', letterSpacing: '0.08em',
-                textTransform: 'uppercase', textDecoration: 'none',
-                padding: '0.45rem 0.8rem',
-                color: pathname === l.href ? '#F0A500' : '#7A7570',
-                borderBottom: pathname === l.href ? '1px solid #F0A500' : '1px solid transparent',
-                transition: 'color 0.2s',
-              }}
-              onMouseEnter={e => { if (pathname !== l.href) e.target.style.color = '#D0C8C0'; }}
-              onMouseLeave={e => { if (pathname !== l.href) e.target.style.color = '#7A7570'; }}
+              <Link
+                key={l.href}
+                href={l.href}
+                className={`axiom-nav-link${pathname === l.href ? ' active' : ''}`}
               >
                 {l.label}
               </Link>
@@ -127,6 +120,19 @@ export default function Navbar() {
       </nav>
 
       <style>{`
+        .axiom-nav-link {
+          font-family: 'Space Mono', monospace;
+          font-size: 0.68rem;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          text-decoration: none;
+          padding: 0.45rem 0.8rem;
+          color: #7A7570;
+          border-bottom: 1px solid transparent;
+          transition: color 0.2s;
+        }
+        .axiom-nav-link:hover { color: #D0C8C0; }
+        .axiom-nav-link.active { color: #F0A500; border-bottom: 1px solid #F0A500; }
         .hide-mobile { display: flex !important; }
         .show-mobile { display: none !important; }
         @media(max-width:768px) {
