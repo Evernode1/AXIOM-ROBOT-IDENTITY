@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg: #06080F;
+  --bg2: #0B0E1A;
+  --bg3: #101525;
+  --gold: #F0A500;
+  --gold-dim: rgba(240,165,0,0.12);
+  --gold-border: rgba(240,165,0,0.2);
+  --green: #00FFB2;
+  --red: #FF4D6A;
+  --blue: #4D9FFF;
+  --txt: #E2DDD6;
+  --txt2: #7A7570;
+  --txt3: #3A3835;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Subtle scanline overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 4px);
+  pointer-events: none;
+  z-index: 9998;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 2px; }
+
+/* Typography */
+.f-display { font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.06em; }
+.f-mono    { font-family: 'Space Mono', monospace; }
+
+/* Grid background */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(240,165,0,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(240,165,0,0.04) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+/* Cards */
+.card {
+  background: var(--bg3);
+  border: 1px solid var(--gold-border);
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.card:hover { border-color: rgba(240,165,0,0.45); box-shadow: 0 0 24px rgba(240,165,0,0.06); }
+
+/* Clipped corners (industrial) */
+.clip {
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+}
+.clip-sm {
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+}
+
+/* Buttons */
+.btn {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-gold {
+  background: var(--gold);
+  color: #06080F;
+  font-weight: 700;
+  padding: 0.7rem 1.4rem;
+}
+.btn-gold:hover { background: #FFB800; box-shadow: 0 0 24px rgba(240,165,0,0.35); }
+
+.btn-outline {
+  background: transparent;
+  color: var(--gold);
+  border: 1px solid rgba(240,165,0,0.35);
+  padding: 0.7rem 1.4rem;
+}
+.btn-outline:hover { border-color: var(--gold); background: rgba(240,165,0,0.06); }
+
+/* Tags */
+.tag {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.55rem;
+  display: inline-block;
+}
+.tag-gold  { background: rgba(240,165,0,0.1);  border: 1px solid rgba(240,165,0,0.3);  color: var(--gold); }
+.tag-green { background: rgba(0,255,178,0.08); border: 1px solid rgba(0,255,178,0.25); color: var(--green); }
+.tag-red   { background: rgba(255,77,106,0.08); border: 1px solid rgba(255,77,106,0.25); color: var(--red); }
+.tag-blue  { background: rgba(77,159,255,0.08); border: 1px solid rgba(77,159,255,0.25); color: var(--blue); }
+
+/* Inputs */
+input, select, textarea {
+  background: var(--bg2) !important;
+  border: 1px solid var(--gold-border) !important;
+  color: var(--txt) !important;
+  font-family: 'DM Sans', sans-serif;
+  width: 100%;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  border-radius: 0;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 0 2px rgba(240,165,0,0.08) !important;
+}
+input::placeholder, textarea::placeholder { color: var(--txt3); }
+select option { background: var(--bg2); }
+label { font-size: 0.72rem; font-family: 'Space Mono', monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--txt2); display: block; margin-bottom: 0.4rem; }
+
+/* Divider */
+.divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(240,165,0,0.2), transparent); }
+
+/* Animations */
+@keyframes fadeUp   { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
+@keyframes blink    { 0%,100% { opacity:1; } 50% { opacity:0; } }
+@keyframes pulseDot { 0%,100% { box-shadow:0 0 0 0 rgba(0,255,178,0.5); } 70% { box-shadow:0 0 0 8px rgba(0,255,178,0); } }
+@keyframes spin     { to { transform: rotate(360deg); } }
+@keyframes glitch1  { 0%,100%{clip-path:inset(50% 0 30% 0)} 20%{clip-path:inset(10% 0 60% 0)} 40%{clip-path:inset(80% 0 5% 0)} 60%{clip-path:inset(25% 0 50% 0)} }
+@keyframes scanline { 0%{transform:translateY(-5%)} 100%{transform:translateY(105%)} }
+@keyframes hashScroll { 0%{transform:translateY(0)} 100%{transform:translateY(-50%)} }
+@keyframes counterUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+
+.anim-fade-up  { animation: fadeUp 0.55s ease both; }
+.anim-fade-in  { animation: fadeIn 0.4s ease both; }
+.anim-blink    { animation: blink 1.1s step-end infinite; }
+.anim-pulse    { animation: pulseDot 1.8s ease infinite; }
+
+/* Page layout */
+.page-wrap { max-width: 1200px; margin: 0 auto; padding: 100px 1.5rem 5rem; }
+.page-header { margin-bottom: 2.5rem; }
+.page-title { font-family: 'Bebas Neue', sans-serif; font-size: clamp(2.4rem, 5vw, 3.8rem); letter-spacing: 0.06em; color: var(--txt); line-height: 1; }
+.page-sub { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); margin-bottom: 0.6rem; }
+
+/* Metric card */
+.metric-card {
+  background: var(--bg3);
+  border: 1px solid var(--gold-border);
+  padding: 1.2rem 1.5rem;
+}
+.metric-value { font-family: 'Bebas Neue', sans-serif; font-size: 2.4rem; letter-spacing: 0.06em; color: var(--txt); line-height: 1; }
+.metric-label { font-family: 'Space Mono', monospace; font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--txt2); margin-top: 0.25rem; }
