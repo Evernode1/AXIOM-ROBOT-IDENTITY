@@ -17,6 +17,7 @@ const NAV_LINKS = [
   { href: '/popw',                 label: 'PoPW Submit'     },
   { href: '/validators',           label: 'Validators'      },
   { href: '/validators/register',  label: 'Val. Register', badge: 'NEW' },
+  { href: '/simulator',            label: 'Simulator',     badge: 'NEW' },
 ];
 
 const WALLETS = [
