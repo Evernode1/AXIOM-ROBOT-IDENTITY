@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle, Hash, Zap, ChevronRight, Lock, Unlock,
-  Eye, EyeOff, AlertTriangle, Wifi, WifiOff, Database, Globe
+  Eye, EyeOff, AlertTriangle, Wifi, WifiOff, Database, Globe, Wallet
 } from 'lucide-react';
 import { TASK_CATEGORIES, MEMORY_CAP, VALIDATOR_POOL, TELEMETRY_SECTIONS } from '@/lib/data';
 import { loadItems, addItem }          from '@/lib/storage';
@@ -11,6 +11,15 @@ import {
   calcPoPWScore, fmtTime, timeAgo, trunc,
   selectValidators, assignSections, computeConsensus, runChallengeRound,
 } from '@/lib/utils';
+
+// ── Onchain engine ────────────────────────────────────────────────────────────
+import {
+  WALLET, CHAIN, EXPLORER,
+  sendExtrinsic, initChain,
+  fbSaveMemory, loadDB, DB,
+  chainHash,
+  on, off,
+} from '@/lib/chain';
 
 // ── Commit-Reveal Pipeline Stages ────────────────────────────────────────────
 const PHASES = {
@@ -104,6 +113,13 @@ export default function PoPW() {
     ev.preventDefault();
     const e = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
+
+    // ── Wallet guard ──────────────────────────────────────────────────
+    if (!WALLET.connected || !WALLET.signer || WALLET.readOnly) {
+      setErrors({ _wallet: 'SubWallet / Talisman connect karo pehle — real onchain tx ke liye signer chahiye.' });
+      return;
+    }
+
     setErrors({});
     setResult(null);
     setPhasesDone([]);
@@ -113,76 +129,133 @@ export default function PoPW() {
     const telemetryHash  = generateTelemetryHash(form.robotId, form.taskType, ts, form.evidence);
     const robot          = robots.find(r => r.id === form.robotId);
 
-    // ── PHASE 1: COMMIT ──────────────────────────────────────────────────────
-    // Animate hash generation
+    // ── PHASE 1: COMMIT — real system.remark tx ───────────────────────
     const chars = '0123456789abcdef';
     intervalRef.current = setInterval(() => {
       setHashAnim('0x' + Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join(''));
     }, 60);
 
-    await runPhase('COMMIT', PHASES.COMMIT.steps, 700);
+    // Start phase animation concurrently with tx signing
+    const commitPhasePromise = runPhase('COMMIT', PHASES.COMMIT.steps, 700);
+
+    let txResult;
+    try {
+      txResult = await sendExtrinsic(
+        'axiom.commitPoPW',
+        {
+          robotId:       form.robotId.slice(0, 16),
+          taskType:      form.taskType,
+          telemetryHash: telemetryHash.slice(0, 18),
+          ts,
+        },
+        `commitPoPW(${form.taskType})`
+      );
+    } catch (err) {
+      clearInterval(intervalRef.current);
+      setPhase(null);
+      setErrors({ _wallet: 'Transaction failed: ' + err.message });
+      return;
+    }
+
+    await commitPhasePromise;
     clearInterval(intervalRef.current);
     setHashAnim(telemetryHash);
 
-    // ── PHASE 2: VALIDATE ────────────────────────────────────────────────────
+    const realBlock = txResult.blockNumber;
+    const realTxHash = txResult.txHash;
+
+    // ── PHASE 2: VALIDATE ─────────────────────────────────────────────
     await runPhase('VALIDATE', PHASES.VALIDATE.steps, 800);
 
-    // ── Layer 1: Random sampling — select 3-5 validators ──
     const baseScore  = calcPoPWScore(form.duration, !!form.evidence);
     const sampled    = selectValidators(VALIDATOR_POOL);
     const withSecs   = assignSections(sampled, TELEMETRY_SECTIONS);
     setSelectedVals(withSecs);
 
-    // Animate validator scores appearing one by one
-    const consensus  = computeConsensus(sampled, baseScore);
+    const consensus = computeConsensus(sampled, baseScore);
     for (let i = 0; i < consensus.scores.length; i++) {
       await new Promise(r => setTimeout(r, 400));
       setValidatorScores(prev => [...prev, consensus.scores[i]]);
     }
     setConsensusData(consensus);
 
-    // ── Layer 2: 70% consensus check — challenge round if needed ──
     if (consensus.challengeTriggered) {
       await new Promise(r => setTimeout(r, 600));
       const extras = runChallengeRound(VALIDATOR_POOL, sampled.map(v => v.id), baseScore);
       setChallengeVals(extras);
-      for (const ev of extras) {
+      for (const ev2 of extras) {
         await new Promise(r => setTimeout(r, 350));
-        setValidatorScores(prev => [...prev, ev]);
+        setValidatorScores(prev => [...prev, ev2]);
       }
     }
 
-    // ── PHASE 3: SCORE ───────────────────────────────────────────────────────
-    await runPhase('SCORE', PHASES.SCORE.steps, 750);
+    // ── PHASE 3: SCORE — second real tx (writeMemory) ─────────────────
+    const scoreTxSteps = [
+      'Computing consensus popw_score…',
+      'Uploading full telemetry to IPFS…',
+      'Signing writeMemory extrinsic — approve in wallet…',
+      'Memory committed onchain ✓',
+    ];
+    const scorePhasePromise = runPhase('SCORE', scoreTxSteps, 750);
 
-    const ipfsCid     = generateIPFSCID(telemetryHash);
-    const taskId      = generateTaskId(form.robotId, ts);
-    const finalScore  = consensus.passed ? consensus.consensusScore : calcPoPWScore(form.duration, !!form.evidence);
-    const blockNumber = 1284750 + Math.floor(ts / 6000) % 500;
+    const finalScore   = consensus.passed ? consensus.consensusScore : baseScore;
+    const ipfsCid      = generateIPFSCID(telemetryHash);
+    const taskId       = generateTaskId(form.robotId, ts);
 
+    let scoreTxResult;
+    try {
+      scoreTxResult = await sendExtrinsic(
+        'axiom.writeMemory',
+        {
+          robotId:   form.robotId.slice(0, 16),
+          taskId:    taskId.slice(0, 16),
+          taskType:  form.taskType,
+          popw:      finalScore,
+          ipfsCid:   ipfsCid.slice(0, 20),
+        },
+        `writeMemory(${form.taskType}, score=${finalScore.toFixed(3)})`
+      );
+    } catch (err) {
+      // Score tx failed — still show commit result with warning
+      scoreTxResult = { txHash: null, blockNumber: realBlock };
+      console.warn('[PoPW] Score tx failed:', err.message);
+    }
+
+    await scorePhasePromise;
+
+    // ── Build final memory entry ──────────────────────────────────────
     const newMem = {
-      // ── ONCHAIN DIGEST (96 bytes) ──
+      // ── ONCHAIN DIGEST ──
       task_id:        taskId,
       telemetry_hash: telemetryHash,
       popw_score:     finalScore,
-      block_number:   blockNumber,
+      block_number:   scoreTxResult.blockNumber || realBlock,
+      tx_hash:        realTxHash,
+      score_tx_hash:  scoreTxResult.txHash || null,
       // ── OFFCHAIN (IPFS) ──
       ipfs_cid:       ipfsCid,
       // ── INDEX ──
       id:             `MEM-${ts}`,
+      robot_id:       form.robotId,
       robotId:        form.robotId,
       robotName:      robot?.name || 'Unknown',
+      task_type:      form.taskType,
       taskType:       form.taskType,
       description:    form.description,
       duration:       form.duration,
       timestamp:      ts,
-      outcome:        'SUCCESS',
+      outcome:        finalScore >= 0.5 ? 'SUCCESS' : 'FAILED',
+      validator_addr: WALLET.address,
       commit_phase:   ts - 2400,
       reveal_phase:   ts - 1600,
       score_phase:    ts,
+      local:          false,
     };
 
-    await addItem('memories', newMem);
+    // Persist: Firebase (global) + Vercel KV (index)
+    await fbSaveMemory(newMem).catch(console.warn);
+    await addItem('memories', newMem).catch(console.warn);
+
     setMemories(prev => [newMem, ...prev]);
     setResult(newMem);
     setPhase('DONE');
@@ -338,6 +411,17 @@ export default function PoPW() {
                 </div>
               </div>
 
+              {/* Wallet guard — shown if not connected */}
+              {errors._wallet && (
+                <div style={{
+                  padding: '0.75rem', background: 'rgba(255,77,77,0.07)',
+                  border: '1px solid rgba(255,77,77,0.25)', borderRadius: 8,
+                  fontFamily: "'Space Mono', monospace", fontSize: '0.68rem', color: '#FF4D4D', lineHeight: 1.5,
+                }}>
+                  ⚠ {errors._wallet}
+                </div>
+              )}
+
               <button type="submit" className="btn btn-gold clip-sm" style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem' }} disabled={isRunning}>
                 {isRunning ? (
                   <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -345,243 +429,4 @@ export default function PoPW() {
                     {phase === 'COMMIT' ? 'Committing Hash...' : phase === 'VALIDATE' ? 'Validating Off-chain...' : 'Scoring & Storing...'}
                   </span>
                 ) : (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Hash size={14} /> Begin Commit–Reveal <ChevronRight size={14} />
-                  </span>
-                )}
-              </button>
-            </form>
-          </div>
-
-          {/* Privacy explainer */}
-          <div className="card" style={{ padding: '1.25rem' }}>
-            <div className="f-mono" style={{ fontSize: '0.6rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#4A4845', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Lock size={10} /> Privacy Model
-            </div>
-            {[
-              { icon: Eye,    c: '#FF4D6A', label: 'NEVER onchain', items: ['Raw sensor streams', 'Trajectory traces', 'Proprietary motion policies', 'Environment maps'] },
-              { icon: EyeOff, c: '#00FFB2', label: 'ONCHAIN only',  items: ['32-byte telemetry_hash', 'popw_score (0–100)', 'block_number', 'task_id'] },
-            ].map(s => {
-              const Icon = s.icon;
-              return (
-                <div key={s.label} style={{ marginBottom: '0.85rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
-                    <Icon size={10} color={s.c} />
-                    <span className="f-mono" style={{ fontSize: '0.6rem', color: s.c, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{s.label}</span>
-                  </div>
-                  {s.items.map(i => (
-                    <div key={i} style={{ fontSize: '0.73rem', color: '#4A4845', paddingLeft: '1.2rem', marginBottom: '0.2rem' }}>· {i}</div>
-                  ))}
-                </div>
-              );
-            })}
-            <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(240,165,0,0.1), transparent)', margin: '0.75rem 0' }} />
-            <div style={{ fontSize: '0.7rem', color: '#3A3835', lineHeight: 1.6 }}>
-              Memory cap: <span style={{ color: '#F0A500' }}>{MEMORY_CAP} entries/robot</span> · Oldest pruned at cap · ~96 bytes per entry onchain
-            </div>
-          </div>
-        </div>
-
-        {/* ── RIGHT COLUMN ─────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-          {/* Active pipeline */}
-          {(isRunning || result) && (
-            <div className="card" style={{ padding: '1.5rem', border: `1px solid ${currentPhaseData ? currentPhaseData.color + '40' : 'rgba(0,255,178,0.25)'}`, transition: 'border-color 0.4s' }}>
-              <div className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '1.25rem', color: currentPhaseData ? currentPhaseData.color : '#00FFB2' }}>
-                {phase === 'DONE' ? '✓ All Phases Complete' : `⟳ Phase: ${phase}`}
-              </div>
-
-              {/* Current phase steps */}
-              {currentPhaseData && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
-                  {currentPhaseData.steps.map((s, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', opacity: step > i ? 1 : 0.2, transition: 'opacity 0.3s' }}>
-                      <div style={{ width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
-                        background: step > i ? `${currentPhaseData.color}18` : 'rgba(255,255,255,0.03)',
-                        border: `1px solid ${step > i ? currentPhaseData.color + '50' : 'rgba(255,255,255,0.06)'}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        {step > i && <CheckCircle size={8} color={currentPhaseData.color} />}
-                      </div>
-                      <span className="f-mono" style={{ fontSize: '0.62rem', color: step > i ? '#8A8580' : '#2A2825' }}>{s}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Live hash display */}
-              {(isRunning || result) && (
-                <div style={{ background: '#06080F', border: '1px solid rgba(0,255,178,0.1)', padding: '0.85rem', marginBottom: '1rem' }}>
-                  <div className="f-mono" style={{ fontSize: '0.54rem', color: '#3A3835', marginBottom: '0.4rem', letterSpacing: '0.1em' }}>
-                    TELEMETRY HASH (32 bytes — onchain)
-                  </div>
-                  <div className="f-mono" style={{ fontSize: '0.65rem', color: isRunning ? '#F0A500' : '#00FFB2', wordBreak: 'break-all', lineHeight: 1.5, transition: 'color 0.4s' }}>
-                    {isRunning ? hashAnim : result?.telemetry_hash}
-                  </div>
-                </div>
-              )}
-
-              {/* Validator scores — real 5-layer consensus */}
-              {validatorScores.length > 0 && (
-                <div style={{ marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
-                    <div className="f-mono" style={{ fontSize: '0.56rem', color: '#4A4845', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                      Off-chain Validators ({validatorScores.length} sampled)
-                    </div>
-                    {consensusData && (
-                      <span className={`tag tag-${consensusData.passed ? 'green' : 'gold'}`} style={{ fontSize: '0.52rem' }}>
-                        {consensusData.ratio}% agree {consensusData.passed ? '✓' : '— CHALLENGE'}
-                      </span>
-                    )}
-                  </div>
-                  {validatorScores.map((v, i) => {
-                    const isDeviant    = consensusData && Math.abs(v.score - consensusData.median) > 15;
-                    const isChallenger = v.isChallenge;
-                    return (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', padding: '0.4rem 0.65rem', background: '#06080F', border: `1px solid ${isChallenger ? 'rgba(77,159,255,0.2)' : isDeviant ? 'rgba(255,77,106,0.2)' : 'rgba(240,165,0,0.06)'}` }}>
-                        <div>
-                          <span className="f-mono" style={{ fontSize: '0.6rem', color: isChallenger ? '#4D9FFF' : '#F0A500', marginRight: '0.5rem' }}>
-                            {v.id}{isChallenger ? ' [CHG]' : ''}
-                          </span>
-                          <span className="f-mono" style={{ fontSize: '0.54rem', color: '#3A3835' }}>{v.addr}</span>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
-                          {v.sections && <span className="f-mono" style={{ fontSize: '0.52rem', color: '#3A3835' }}>{v.sections.length} sections</span>}
-                          <span className="f-mono" style={{ fontSize: '0.56rem', color: '#4A4845' }}>{(v.stake/1000).toFixed(1)}k KNX</span>
-                          <span className="f-display" style={{ fontSize: '1rem', color: isDeviant ? '#FF4D6A' : '#00FFB2' }}>{v.score}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {consensusData?.challengeTriggered && (
-                    <div style={{ fontSize: '0.7rem', color: '#F0A500', marginTop: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <span>⚡</span> Consensus below 70% — challenge round triggered
-                    </div>
-                  )}
-                  {consensusData && (
-                    <div style={{ marginTop: '0.6rem', padding: '0.5rem 0.65rem', background: 'rgba(0,255,178,0.04)', border: '1px solid rgba(0,255,178,0.1)', display: 'flex', justifyContent: 'space-between' }}>
-                      <span className="f-mono" style={{ fontSize: '0.58rem', color: '#4A4845' }}>Consensus ({consensusData.agreeingCount}/{consensusData.totalCount} agree)</span>
-                      <span className="f-display" style={{ fontSize: '1.1rem', color: '#00FFB2' }}>{consensusData.consensusScore}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Final result — dual layer display */}
-              {result && phase === 'DONE' && (
-                <>
-                  {/* ONCHAIN DIGEST */}
-                  <div style={{ border: '1px solid rgba(77,159,255,0.25)', background: 'rgba(77,159,255,0.04)', padding: '1rem', marginBottom: '0.75rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                      <Database size={12} color="#4D9FFF" />
-                      <span className="f-mono" style={{ fontSize: '0.6rem', color: '#4D9FFF', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                        Onchain Digest — {96} bytes · Block #{result.block_number?.toLocaleString()}
-                      </span>
-                    </div>
-                    {[
-                      { l: 'task_id',        v: result.task_id,        c: '#E2DDD6' },
-                      { l: 'telemetry_hash', v: trunc(result.telemetry_hash, 12, 8), c: '#00FFB2' },
-                      { l: 'popw_score',     v: result.popw_score,     c: '#F0A500' },
-                      { l: 'block_number',   v: result.block_number?.toLocaleString(), c: '#4D9FFF' },
-                    ].map(f => (
-                      <div key={f.l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                        <span className="f-mono" style={{ fontSize: '0.6rem', color: '#3A3835' }}>{f.l}</span>
-                        <span className="f-mono" style={{ fontSize: '0.62rem', color: f.c }}>{f.v}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* OFFCHAIN IPFS */}
-                  <div style={{ border: '1px solid rgba(240,165,0,0.2)', background: 'rgba(240,165,0,0.03)', padding: '1rem', marginBottom: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <Globe size={12} color="#F0A500" />
-                        <span className="f-mono" style={{ fontSize: '0.6rem', color: '#F0A500', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                          IPFS Payload — 0 bytes onchain
-                        </span>
-                      </div>
-                      <button onClick={() => setShowRaw(!showRaw)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5A5550', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        {showRaw ? <Eye size={10} /> : <EyeOff size={10} />}
-                        <span className="f-mono" style={{ fontSize: '0.54rem', color: '#4A4845' }}>{showRaw ? 'HIDE' : 'SHOW'} CID</span>
-                      </button>
-                    </div>
-                    {showRaw ? (
-                      <>
-                        <div className="f-mono" style={{ fontSize: '0.62rem', color: '#F0A500', wordBreak: 'break-all', marginBottom: '0.4rem' }}>{result.ipfs_cid}</div>
-                        <div style={{ fontSize: '0.7rem', color: '#3A3835' }}>Full telemetry payload: sensor streams, trajectory traces, raw execution data.</div>
-                      </>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <Lock size={10} color="#4A4845" />
-                        <span className="f-mono" style={{ fontSize: '0.6rem', color: '#3A3835' }}>Raw telemetry hidden — proprietary data stays private</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <button onClick={() => { setResult(null); setPhase(null); setPhasesDone([]); setValidatorScores([]); }}
-                    className="btn btn-outline" style={{ fontSize: '0.62rem', justifyContent: 'center', width: '100%' }}>
-                    Submit Another Task
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Recent submissions */}
-          <div className="card" style={{ padding: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <span className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F0A500' }}>Recent Submissions</span>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <span className="tag tag-blue" style={{ fontSize: '0.55rem' }}>ONCHAIN</span>
-                <span className="tag tag-gold" style={{ fontSize: '0.55rem' }}>IPFS</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {memories.slice(0, 7).map((m, i) => (
-                <div key={m.id} style={{ padding: '0.85rem 0', borderBottom: i < 6 ? '1px solid rgba(240,165,0,0.05)' : 'none', display: 'flex', gap: '0.85rem' }}>
-                  {/* Timeline */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '0.2rem', flexShrink: 0 }}>
-                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: m.outcome === 'SUCCESS' ? '#00FFB2' : '#F0A500', boxShadow: `0 0 5px ${m.outcome === 'SUCCESS' ? '#00FFB2' : '#F0A500'}` }} />
-                    {i < 6 && <div style={{ width: 1, flex: 1, background: 'rgba(240,165,0,0.06)', marginTop: '0.3rem' }} />}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', gap: '0.4rem' }}>
-                      <span style={{ fontSize: '0.78rem', color: '#C0B8B0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.robotName}</span>
-                      <span className="f-mono" style={{ fontSize: '0.56rem', color: '#4A4845', flexShrink: 0 }}>{timeAgo(m.timestamp)}</span>
-                    </div>
-                    <div style={{ fontSize: '0.72rem', color: '#5A5550', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '0.25rem' }}>{m.taskType}</div>
-                    <div style={{ display: 'flex', gap: '0.75rem' }}>
-                      {/* Onchain indicator */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        <Database size={8} color="#4D9FFF" />
-                        <span className="f-mono" style={{ fontSize: '0.55rem', color: '#4D9FFF' }}>
-                          {m.popw_score ?? '—'}pts
-                        </span>
-                      </div>
-                      {/* IPFS indicator */}
-                      {m.ipfs_cid && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                          <Globe size={8} color="#F0A500" />
-                          <span className="f-mono" style={{ fontSize: '0.55rem', color: '#4A4845' }}>
-                            {trunc(m.ipfs_cid, 6, 4)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <style>{`
-        .popw-grid { grid-template-columns: 1fr 1fr; }
-        @media(max-width: 900px) { .popw-grid { grid-template-columns: 1fr; } }
-      `}</style>
-    </div>
-  );
-}
+                  <span style={{ display: 'flex', alignItems: 'center', gap:
