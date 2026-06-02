@@ -8,6 +8,10 @@ import { TASK_CATEGORIES, MEMORY_CAP } from '@/lib/data';
 import { loadItems }                    from '@/lib/storage';
 import { timeAgo, fmtTime, trunc, outcomeColor } from '@/lib/utils';
 import { ONCHAIN_BYTES_PER_ENTRY }      from '@/lib/utils';
+import {
+  DB, loadDB, attachRealtimeListeners, initChain,
+  on, off, explorerTxUrl,
+} from '@/lib/chain';
 
 const OUTCOMES = ['All', 'SUCCESS', 'PARTIAL', 'FAILED'];
 const ICON     = { SUCCESS: CheckCircle, PARTIAL: AlertTriangle, FAILED: XCircle };
@@ -25,14 +29,33 @@ export default function Memory() {
   async function fetchMemories() {
     setLoading(true); setSynced(false);
     try {
-      const data = await loadItems('memories');
-      setMemories(data.sort((a, b) => b.timestamp - a.timestamp));
+      // Primary: Firebase realtime DB
+      await initChain();
+      await loadDB();
+      attachRealtimeListeners();
+      // Also load from KV as supplemental
+      const kvData = await loadItems('memories').catch(() => []);
+      // Merge Firebase + KV, deduplicate by task_id
+      const fbMem = [...DB.memory];
+      const merged = [...fbMem];
+      kvData.forEach(m => {
+        if (!merged.find(x => x.task_id === m.task_id)) merged.push(m);
+      });
+      setMemories(merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
       setSynced(true);
     } catch { setSynced(false); }
     finally  { setLoading(false); }
   }
 
-  useEffect(() => { fetchMemories(); }, []);
+  useEffect(() => {
+    const onMem = () => {
+      const kvMerged = [...DB.memory];
+      setMemories([...kvMerged].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+    };
+    on('memory:updated', onMem);
+    fetchMemories();
+    return () => off('memory:updated', onMem);
+  }, []);
 
   const filtered = memories.filter(m => {
     const q  = search.toLowerCase();
@@ -64,7 +87,7 @@ export default function Memory() {
               : synced ? <Wifi size={12} color="#00FFB2" /> : <WifiOff size={12} color="#FF4D6A" />
             }
             <span className="f-mono" style={{ fontSize: '0.58rem', color: loading ? '#F0A500' : synced ? '#00FFB2' : '#FF4D6A', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-              {loading ? 'Syncing KV...' : synced ? 'KV Synced' : 'Cache Mode'}
+              {loading ? 'Firebase Loading...' : synced ? 'Firebase Live' : 'Cache Mode'}
             </span>
             <button onClick={fetchMemories} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5A5550' }}><RefreshCw size={11} /></button>
           </div>
