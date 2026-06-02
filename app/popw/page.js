@@ -17,8 +17,8 @@ import {
 import {
   WALLET, CHAIN, EXPLORER,
   sendExtrinsic, initChain,
-  fbSaveMemory, fbSaveReputation, loadDB, DB,
-  postTaskOnchain, chainHash,
+  fbSaveMemory, fbSaveReputation, fbSaveTask, fbUpdateTask, loadDB, DB,
+  postTaskOnchain, chainHash, attachRealtimeListeners,
   on, off,
 } from '@/lib/chain';
 
@@ -127,6 +127,7 @@ export default function PoPW() {
   useEffect(() => {
     (async () => {
       await loadDB();
+      attachRealtimeListeners(); // keep tasks/robots in sync via Firestore onSnapshot
       const loadedRobots = [...DB.robots];
       setRobots(loadedRobots);
       setMemories([...DB.memory].sort((a, b) => b.timestamp - a.timestamp));
@@ -185,6 +186,8 @@ export default function PoPW() {
         posterAddress: WALLET.address,
         robotId:       postForm.robotId || null,
       });
+      // Persist to Firebase so task survives refresh
+      await fbSaveTask(task).catch(console.warn);
       setTaskResult(task);
       setPostForm(EMPTY_POST);
       // Switch to board after posting
@@ -325,6 +328,23 @@ export default function PoPW() {
 
     await fbSaveMemory(newMem).catch(console.warn);
     await addItem('memories', newMem).catch(console.warn);
+
+    // ── Update matching open task status in Firebase ──────────────────────────
+    // Find task that matches this robot + taskType that is still 'open'
+    const matchedTask = DB.tasks.find(t =>
+      t.status === 'open' &&
+      t.task_type === form.taskType &&
+      (!t.robot_id || t.robot_id === form.robotId)
+    );
+    if (matchedTask) {
+      const taskUpdates = {
+        status:       success ? 'completed' : 'failed',
+        popw_score:   finalScore,
+        completed_at: new Date().toISOString(),
+        tx_hash:      realTxHash || matchedTask.tx_hash,
+      };
+      await fbUpdateTask(matchedTask.task_id, taskUpdates).catch(console.warn);
+    }
 
     const success = finalScore >= 0.5;
     const DECAY = 0.95;
