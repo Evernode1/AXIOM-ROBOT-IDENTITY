@@ -82,12 +82,24 @@ export default function PoPW() {
   const intervalRef               = useRef(null);
 
   useEffect(() => {
+    const onRobots = () => setRobots(DB.robots.map(r => ({ ...r, id: r.robot_id, name: r.metadata?.label || r.name || 'Unknown', type: r.metadata?.type || r.type || 'Custom', memoryCount: (DB.memory || []).filter(m => m.robot_id === r.robot_id).length })));
+    const onMem    = () => setMemories([...DB.memory].sort((a, b) => b.timestamp - a.timestamp));
+
+    on('robots:updated', onRobots);
+    on('memory:updated', onMem);
+
     (async () => {
-      const [r, m] = await Promise.all([loadItems('robots'), loadItems('memories')]);
-      setRobots(r);
-      setMemories(m.sort((a, b) => b.timestamp - a.timestamp));
+      await initChain();
+      await loadDB();
+      setRobots(DB.robots.map(r => ({ ...r, id: r.robot_id, name: r.metadata?.label || r.name || 'Unknown', type: r.metadata?.type || r.type || 'Custom', memoryCount: (DB.memory || []).filter(m => m.robot_id === r.robot_id).length })));
+      setMemories([...DB.memory].sort((a, b) => b.timestamp - a.timestamp));
       setSynced(true);
     })();
+
+    return () => {
+      off('robots:updated', onRobots);
+      off('memory:updated', onMem);
+    };
   }, []);
 
   function validate() {
