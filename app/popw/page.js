@@ -5,7 +5,7 @@ import {
   Eye, EyeOff, AlertTriangle, Wifi, WifiOff, Database, Globe, Wallet
 } from 'lucide-react';
 import { TASK_CATEGORIES, MEMORY_CAP, VALIDATOR_POOL, TELEMETRY_SECTIONS } from '@/lib/data';
-import { loadItems, addItem }          from '@/lib/storage';
+import { addItem } from '@/lib/storage';
 import {
   generateTelemetryHash, generateIPFSCID, generateTaskId,
   calcPoPWScore, fmtTime, timeAgo, trunc,
@@ -82,12 +82,26 @@ export default function PoPW() {
   const intervalRef               = useRef(null);
 
   useEffect(() => {
+    // ── Load robots from Firebase (source of truth) ──────────────────
     (async () => {
-      const [r, m] = await Promise.all([loadItems('robots'), loadItems('memories')]);
-      setRobots(r);
-      setMemories(m.sort((a, b) => b.timestamp - a.timestamp));
+      await loadDB();
+      setRobots([...DB.robots]);
+      setMemories([...DB.memory].sort((a, b) => b.timestamp - a.timestamp));
       setSynced(true);
     })();
+
+    // ── Listen for real-time Firebase updates ─────────────────────────
+    const onRobotsUpdated = (updated) => setRobots([...updated]);
+    const onMemoryUpdated = (updated) =>
+      setMemories([...updated].sort((a, b) => b.timestamp - a.timestamp));
+
+    on('robots:updated', onRobotsUpdated);
+    on('memory:updated', onMemoryUpdated);
+
+    return () => {
+      off('robots:updated', onRobotsUpdated);
+      off('memory:updated', onMemoryUpdated);
+    };
   }, []);
 
   function validate() {
@@ -127,7 +141,7 @@ export default function PoPW() {
 
     const ts             = Date.now();
     const telemetryHash  = generateTelemetryHash(form.robotId, form.taskType, ts, form.evidence);
-    const robot          = robots.find(r => r.id === form.robotId);
+    const robot          = robots.find(r => (r.robot_id || r.id) === form.robotId);
 
     // ── PHASE 1: COMMIT — real system.remark tx ───────────────────────
     const chars = '0123456789abcdef';
@@ -238,7 +252,7 @@ export default function PoPW() {
       id:             `MEM-${ts}`,
       robot_id:       form.robotId,
       robotId:        form.robotId,
-      robotName:      robot?.name || 'Unknown',
+      robotName:      robot?.metadata?.label || robot?.name || 'Unknown',
       task_type:      form.taskType,
       taskType:       form.taskType,
       description:    form.description,
@@ -262,7 +276,7 @@ export default function PoPW() {
     setForm(EMPTY);
   }
 
-  const selectedRobot = robots.find(r => r.id === form.robotId);
+  const selectedRobot = robots.find(r => (r.robot_id || r.id) === form.robotId);
   const isRunning     = phase && phase !== 'DONE';
   const currentPhaseData = phase && phase !== 'DONE' ? PHASES[phase] : null;
 
@@ -343,8 +357,8 @@ export default function PoPW() {
                 <select value={form.robotId} onChange={e => setForm({ ...form, robotId: e.target.value })} disabled={isRunning}>
                   <option value="">Choose registered robot...</option>
                   {robots.map(r => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} — {r.type}{r.memoryCount >= MEMORY_CAP ? ' [AT CAP]' : ` (${r.memoryCount ?? r.tasks ?? 0}/${MEMORY_CAP})`}
+                    <option key={r.robot_id || r.id} value={r.robot_id || r.id}>
+                      {r.metadata?.label || r.name || r.robot_id} — {r.metadata?.type || r.type}
                     </option>
                   ))}
                 </select>
