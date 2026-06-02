@@ -1,7 +1,7 @@
 /**
  * app/api/robots/route.js
- * Source of truth: Firebase (via chain.js DB) — no mock data.
- * Vercel KV used only for legacy fallback; primary data comes from Firebase.
+ * Vercel KV (Redis) ← source of truth
+ * Returns ONLY real registered robots — no mock/sample data.
  */
 import { storeGet, storePrepend } from '@/lib/kvStore';
 
@@ -23,6 +23,7 @@ export async function POST(req) {
   try {
     const robot = await req.json();
 
+    // Basic validation
     if (!robot?.id || !robot?.name || !robot?.type) {
       return Response.json({ error: 'Invalid robot payload' }, { status: 400 });
     }
