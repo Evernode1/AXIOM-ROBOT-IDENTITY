@@ -17,6 +17,7 @@ import {
   WALLET, CHAIN, EXPLORER,
   sendExtrinsic, initChain,
   fbSaveMemory, fbSaveReputation, loadDB, DB,
+  postTaskOnchain,
   chainHash,
   on, off,
 } from '@/lib/chain';
@@ -80,6 +81,61 @@ export default function PoPW() {
   const [challengeVals, setChallengeVals]     = useState([]);
   const [showRaw, setShowRaw]     = useState(false); // privacy toggle
   const intervalRef               = useRef(null);
+
+  // ── Task Post state ───────────────────────────────────────────────────────
+  const TASK_EMPTY = { instruction: '', taskType: '', rewardKnx: 10, robotId: '' };
+  const [taskForm,    setTaskForm]    = useState(TASK_EMPTY);
+  const [taskPosting, setTaskPosting] = useState(false);
+  const [taskResult,  setTaskResult]  = useState(null);
+  const [taskError,   setTaskError]   = useState('');
+
+  const TASK_EXAMPLES = [
+    { instruction: 'Fly to building roof zone B and photograph solar panel array for damage assessment', taskType: 'Drone Navigation & Swarm Coordination',    rewardKnx: 12 },
+    { instruction: 'Pick the red cylinder from conveyor A and place it precisely in bin B',              taskType: 'Robotic Manipulation (Roboarm)',            rewardKnx: 8  },
+    { instruction: 'Generate complete 3D SLAM map of warehouse sector C including all shelving units',   taskType: 'SLAM / Spatial Perception',                rewardKnx: 15 },
+    { instruction: 'Inspect pipeline joints 47-52 for corrosion damage and record PoPW telemetry',       taskType: 'Robot Identity & Memory',                  rewardKnx: 10 },
+    { instruction: 'Coordinate fleet of 3 drones to do perimeter sweep and return in formation',         taskType: 'Robot Fleet Orchestration',                rewardKnx: 18 },
+    { instruction: 'Perform full VLA task execution on humanoid in unstructured kitchen environment',    taskType: 'Robotic General Intelligence VLA/LBM',     rewardKnx: 20 },
+  ];
+
+  function autofillTask() {
+    const ex = TASK_EXAMPLES[Math.floor(Math.random() * TASK_EXAMPLES.length)];
+    const firstRobot = robots[0];
+    setTaskForm({
+      instruction: ex.instruction,
+      taskType:    ex.taskType,
+      rewardKnx:   ex.rewardKnx,
+      robotId:     firstRobot ? (firstRobot.robot_id || firstRobot.id) : '',
+    });
+    setTaskError('');
+    setTaskResult(null);
+  }
+
+  async function handlePostTask() {
+    if (!taskForm.instruction.trim()) { setTaskError('Task instruction required'); return; }
+    if (!taskForm.taskType)           { setTaskError('Select a task type'); return; }
+    if (!WALLET.connected || !WALLET.signer || WALLET.readOnly) {
+      setTaskError('SubWallet / Talisman wallet connect karo — onchain tx ke liye signer chahiye.');
+      return;
+    }
+    setTaskPosting(true);
+    setTaskError('');
+    setTaskResult(null);
+    try {
+      const task = await postTaskOnchain({
+        instruction:    taskForm.instruction,
+        taskType:       taskForm.taskType,
+        rewardKnx:      parseFloat(taskForm.rewardKnx) || 0,
+        posterAddress:  WALLET.address,
+        robotId:        taskForm.robotId || null,
+      });
+      setTaskResult(task);
+      setTaskForm(TASK_EMPTY);
+    } catch (e) {
+      setTaskError(e.message);
+    }
+    setTaskPosting(false);
+  }
 
   useEffect(() => {
     // ── Load robots from Firebase (source of truth) ──────────────────
@@ -389,6 +445,115 @@ export default function PoPW() {
 
         {/* ── FORM ─────────────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+          {/* ── TASK POST CARD ─────────────────────────────────────────────── */}
+          <div className="card" style={{ padding: '1.75rem', border: '1px solid rgba(0,230,118,0.15)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div className="f-mono" style={{ fontSize: '0.65rem', letterSpacing: '0.14em', textTransform: 'uppercase', color: '#00E676', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Zap size={12} color="#00E676" /> Post New Task On-Chain
+              </div>
+              <button
+                onClick={autofillTask}
+                style={{
+                  background: 'rgba(0,230,118,0.08)', border: '1px solid rgba(0,230,118,0.25)',
+                  borderRadius: 8, padding: '5px 12px', cursor: 'pointer',
+                  fontFamily: "'Space Mono', monospace", fontSize: '0.65rem', color: '#00E676',
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                ✦ Auto-fill Example
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+              <div>
+                <label style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.62rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#3A3835', display: 'block', marginBottom: '0.4rem' }}>Task Instruction *</label>
+                <textarea
+                  rows={3}
+                  placeholder="Describe what the robot should do — e.g. Fly to zone B, scan solar panels, return to base"
+                  value={taskForm.instruction}
+                  onChange={e => setTaskForm({ ...taskForm, instruction: e.target.value })}
+                  disabled={taskPosting}
+                  style={{ resize: 'vertical' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.62rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#3A3835', display: 'block', marginBottom: '0.4rem' }}>Task Type *</label>
+                  <select
+                    value={taskForm.taskType}
+                    onChange={e => setTaskForm({ ...taskForm, taskType: e.target.value })}
+                    disabled={taskPosting}
+                  >
+                    <option value="">Select type…</option>
+                    {TASK_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.62rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#3A3835', display: 'block', marginBottom: '0.4rem' }}>Reward (testKNX)</label>
+                  <input
+                    type="number" min="0" step="0.5"
+                    value={taskForm.rewardKnx}
+                    onChange={e => setTaskForm({ ...taskForm, rewardKnx: e.target.value })}
+                    disabled={taskPosting}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.62rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#3A3835', display: 'block', marginBottom: '0.4rem' }}>Assign Robot (optional)</label>
+                <select
+                  value={taskForm.robotId}
+                  onChange={e => setTaskForm({ ...taskForm, robotId: e.target.value })}
+                  disabled={taskPosting}
+                >
+                  <option value="">Any available robot</option>
+                  {robots.map(r => (
+                    <option key={r.robot_id || r.id} value={r.robot_id || r.id}>
+                      {r.metadata?.label || r.name || r.robot_id} — {r.metadata?.type || r.type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {taskError && (
+                <div style={{ padding: '0.7rem 1rem', background: 'rgba(255,77,77,0.07)', border: '1px solid rgba(255,77,77,0.25)', borderRadius: 8, fontFamily: "'Space Mono', monospace", fontSize: '0.68rem', color: '#FF4D4D' }}>
+                  ⚠ {taskError}
+                </div>
+              )}
+
+              {taskResult && (
+                <div style={{ padding: '0.7rem 1rem', background: 'rgba(0,230,118,0.07)', border: '1px solid rgba(0,230,118,0.25)', borderRadius: 8, fontFamily: "'Space Mono', monospace", fontSize: '0.68rem', color: '#00E676', lineHeight: 1.7 }}>
+                  ✅ Task posted onchain!<br />
+                  <span style={{ color: '#5A5550' }}>Task ID: </span>{taskResult.task_id?.slice(0, 24)}…<br />
+                  {taskResult.tx_hash && <><span style={{ color: '#5A5550' }}>Tx: </span><a href={`${EXPLORER}/explorer?tx=${taskResult.tx_hash}`} target="_blank" rel="noreferrer" style={{ color: '#00E676', textDecoration: 'none', borderBottom: '1px solid rgba(0,230,118,0.4)' }}>{taskResult.tx_hash.slice(0, 22)}…</a></>}
+                </div>
+              )}
+
+              <button
+                onClick={handlePostTask}
+                disabled={taskPosting}
+                style={{
+                  width: '100%', padding: '11px 16px',
+                  background: taskPosting ? 'rgba(0,230,118,0.06)' : 'rgba(0,230,118,0.12)',
+                  border: `1px solid ${taskPosting ? 'rgba(0,230,118,0.2)' : 'rgba(0,230,118,0.4)'}`,
+                  borderRadius: 10, cursor: taskPosting ? 'not-allowed' : 'pointer',
+                  fontFamily: "'Space Mono', monospace", fontWeight: 700, fontSize: '0.75rem',
+                  color: '#00E676', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  transition: 'all 0.2s',
+                }}
+              >
+                {taskPosting ? (
+                  <><span style={{ width: 12, height: 12, border: '2px solid rgba(0,230,118,0.3)', borderTopColor: '#00E676', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> Wallet mein approve karo…</>
+                ) : (
+                  <><Zap size={13} /> ⛓ Post Task On-Chain</>
+                )}
+              </button>
+            </div>
+          </div>
+          {/* ── END TASK POST CARD ─────────────────────────────────────────── */}
+
           <div className="card" style={{ padding: '1.75rem' }}>
             <div className="f-mono" style={{ fontSize: '0.65rem', letterSpacing: '0.14em', textTransform: 'uppercase', color: '#F0A500', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Zap size={12} /> New Task Submission
