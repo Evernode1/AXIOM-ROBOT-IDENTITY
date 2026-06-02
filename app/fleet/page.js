@@ -1,8 +1,16 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { SAMPLE_ROBOTS, NETWORK, ACTIVITY_24H, TASKS_BY_CAT, ROBOT_DIST } from '@/lib/data';
-import { reputationScore, timeAgo, typeColor } from '@/lib/utils';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
+} from 'recharts';
+import { ROBOT_DIST, TASKS_BY_CAT } from '@/lib/data';
+import { timeAgo, typeColor } from '@/lib/utils';
+import {
+  CHAIN, DB,
+  loadDB, attachRealtimeListeners, initChain,
+  on, off, shortAddr, explorerTxUrl,
+} from '@/lib/chain';
 
 const COLORS = ['#4D9FFF', '#F0A500', '#00FFB2', '#FF4D6A', '#B44DFF', '#FF8C42'];
 
@@ -18,36 +26,128 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-export default function Fleet() {
-  const [robots, setRobots]   = useState([]);
-  const [liveBlock, setLiveBlock] = useState(NETWORK.blockHeight);
+function buildActivityData(memories) {
+  // Build last 24 hours from real memory data
+  const buckets = {};
+  for (let i = 0; i < 24; i++) {
+    const h = String(i).padStart(2, '0') + ':00';
+    buckets[h] = { hour: h, tasks: 0, verified: 0 };
+  }
+  const now = Date.now();
+  memories.forEach(m => {
+    const age = now - (m.timestamp || m.executed_at && new Date(m.executed_at).getTime() || now);
+    if (age < 86400000) {
+      const hIdx = 23 - Math.floor(age / 3600000);
+      if (hIdx >= 0 && hIdx < 24) {
+        const key = String(hIdx).padStart(2, '0') + ':00';
+        if (buckets[key]) {
+          buckets[key].tasks++;
+          if ((m.outcome || '') !== 'FAILED') buckets[key].verified++;
+        }
+      }
+    }
+  });
+  return Object.values(buckets);
+}
 
-  useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('axiom_robots') || '[]');
-    setRobots([...SAMPLE_ROBOTS, ...saved]);
-    const t = setInterval(() => setLiveBlock(b => b + 1), 6000);
-    return () => clearInterval(t);
+export default function Fleet() {
+  const [robots,    setRobots]    = useState([]);
+  const [memories,  setMemories]  = useState([]);
+  const [rep,       setRep]       = useState({});
+  const [liveBlock, setLiveBlock] = useState(null);
+  const [loading,   setLoading]   = useState(true);
+  const [chainStatus, setChainStatus] = useState('disconnected');
+
+  const sync = useCallback(() => {
+    setRobots([...DB.robots]);
+    setMemories([...DB.memory]);
+    setRep({ ...DB.reputation });
+    setLoading(false);
   }, []);
 
-  const topRobots = [...robots].sort((a, b) => b.tasks - a.tasks).slice(0, 5);
+  useEffect(() => {
+    const onBlock  = blk  => setLiveBlock(blk);
+    const onStatus = s    => setChainStatus(s);
+    const onRobots = ()   => setRobots([...DB.robots]);
+    const onMem    = ()   => setMemories([...DB.memory]);
+    const onRepUp  = ()   => setRep({ ...DB.reputation });
+
+    on('chain:block',         onBlock);
+    on('chain:status',        onStatus);
+    on('robots:updated',      onRobots);
+    on('memory:updated',      onMem);
+    on('reputation:updated',  onRepUp);
+
+    (async () => {
+      await initChain();
+      await loadDB();
+      attachRealtimeListeners();
+      sync();
+    })();
+
+    return () => {
+      off('chain:block',        onBlock);
+      off('chain:status',       onStatus);
+      off('robots:updated',     onRobots);
+      off('memory:updated',     onMem);
+      off('reputation:updated', onRepUp);
+    };
+  }, [sync]);
+
+  // Derived stats from real data
+  const totalRobots    = robots.length;
+  const totalTasks     = memories.length;
+  const successCount   = memories.filter(m => m.outcome === 'SUCCESS' || (m.popw_score >= 0.5)).length;
+  const successRate    = totalTasks > 0 ? ((successCount / totalTasks) * 100).toFixed(1) : '0.0';
+  const avgPopw        = totalTasks > 0 ? (memories.reduce((s, m) => s + (m.popw_score || 0), 0) / totalTasks).toFixed(3) : '0.000';
+
+  // Top robots by task count (from reputation)
+  const topRobots = robots
+    .map(r => ({
+      ...r,
+      repData: rep[r.robot_id] || { score: 0, total_tasks: 0, successful_tasks: 0 },
+      rName: r.metadata?.label || r.name || 'Unknown',
+      rType: r.metadata?.type  || r.type  || 'Custom',
+    }))
+    .sort((a, b) => (b.repData.total_tasks - a.repData.total_tasks))
+    .slice(0, 5);
+
+  const activityData = buildActivityData(memories);
+
+  // Task distribution from real memory data
+  const taskCatMap = {};
+  memories.forEach(m => {
+    const cat = (m.task_type || m.taskType || 'Unknown').split(' ')[0];
+    taskCatMap[cat] = (taskCatMap[cat] || 0) + 1;
+  });
+  const taskDistData = Object.entries(taskCatMap).map(([name, count]) => ({ name, count }));
+
+  // Robot type distribution from real robots
+  const typeMap = {};
+  robots.forEach(r => {
+    const t = (r.metadata?.type || r.type || 'Custom').split(' ')[0];
+    typeMap[t] = (typeMap[t] || 0) + 1;
+  });
+  const robotDistData = Object.entries(typeMap).map(([name, value]) => ({ name, value }));
+
+  const statusColor = chainStatus === 'connected' ? '#00FFB2' : chainStatus === 'connecting' ? '#F0A500' : '#FF4D6A';
 
   const METRICS = [
-    { label: 'Total Robots', value: (NETWORK.totalRobots + robots.filter(r => !SAMPLE_ROBOTS.find(s => s.id === r.id)).length).toLocaleString(), sub: 'registered on AXIOM' },
-    { label: 'Tasks Completed', value: NETWORK.tasksCompleted.toLocaleString(), sub: 'all-time PoPW logs' },
-    { label: 'Success Rate', value: `${NETWORK.successRate}%`, sub: 'verified task success', color: '#00FFB2' },
-    { label: 'Active Subnets', value: NETWORK.activeSubnets, sub: 'Konnex testnet zones' },
-    { label: 'KNX Staked', value: NETWORK.knxStaked, sub: 'by robot operators' },
-    { label: 'Live Block', value: `#${liveBlock.toLocaleString()}`, sub: '~6s block time', color: '#4D9FFF' },
+    { label: 'Total Robots',    value: totalRobots.toLocaleString(),   sub: 'registered on AXIOM',       color: '#E2DDD6' },
+    { label: 'Tasks Completed', value: totalTasks.toLocaleString(),    sub: 'real PoPW memory entries',   color: '#E2DDD6' },
+    { label: 'Success Rate',    value: `${successRate}%`,              sub: 'verified task success',      color: '#00FFB2' },
+    { label: 'Avg PoPW Score',  value: avgPopw,                        sub: 'consensus score',            color: '#4D9FFF' },
+    { label: 'Chain Status',    value: chainStatus.toUpperCase(),      sub: 'Konnex Testnet',             color: statusColor },
+    { label: 'Live Block',      value: liveBlock ? `#${liveBlock.toLocaleString()}` : '—', sub: '~6s block time', color: '#4D9FFF' },
   ];
 
   return (
     <div className="page-wrap">
-      {/* Header */}
       <div className="page-header">
         <div className="page-sub">// Fleet Dashboard</div>
         <h1 className="page-title">FLEET ANALYTICS</h1>
         <p style={{ color: '#6A6560', fontSize: '0.88rem', marginTop: '0.5rem', maxWidth: 540 }}>
-          Real-time network metrics, task activity, and robot performance across all AXIOM-registered units on Konnex Testnet.
+          Real-time Firebase + Konnex Testnet data — live robot stats, PoPW memory entries, aur chain metrics.
         </p>
       </div>
 
@@ -55,7 +155,11 @@ export default function Fleet() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1px', background: 'rgba(240,165,0,0.08)', marginBottom: '2rem' }}>
         {METRICS.map(m => (
           <div key={m.label} className="card" style={{ padding: '1.25rem 1.5rem', background: '#101525' }}>
-            <div className="metric-value" style={{ color: m.color || '#E2DDD6' }}>{m.value}</div>
+            {loading ? (
+              <div style={{ height: 36, background: 'rgba(240,165,0,0.08)', borderRadius: 4, marginBottom: 6, animation: 'pulse 1.5s infinite' }} />
+            ) : (
+              <div className="metric-value" style={{ color: m.color }}>{m.value}</div>
+            )}
             <div className="metric-label">{m.label}</div>
             <div style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.56rem', color: '#3A3835', marginTop: '0.2rem' }}>{m.sub}</div>
           </div>
@@ -64,133 +168,167 @@ export default function Fleet() {
 
       {/* Charts row */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1.5rem', marginBottom: '1.5rem' }} className="chart-row">
-
-        {/* Activity chart */}
         <div className="card" style={{ padding: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-            <div>
-              <div className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F0A500', marginBottom: '0.25rem' }}>Network Activity</div>
-              <div style={{ fontSize: '0.78rem', color: '#5A5550' }}>24-hour task & verification throughput</div>
-            </div>
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              {[{ c: '#F0A500', l: 'Tasks' }, { c: '#00FFB2', l: 'Verified' }].map(i => (
-                <div key={i.l} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <div style={{ width: 8, height: 2, background: i.c, borderRadius: 1 }} />
-                  <span className="f-mono" style={{ fontSize: '0.58rem', color: '#5A5550' }}>{i.l}</span>
-                </div>
-              ))}
-            </div>
+          <div style={{ marginBottom: '1.25rem' }}>
+            <div className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F0A500', marginBottom: '0.25rem' }}>Network Activity (Real)</div>
+            <div style={{ fontSize: '0.78rem', color: '#5A5550' }}>Last 24h task & verification throughput from Firebase</div>
           </div>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={ACTIVITY_24H}>
+            <AreaChart data={activityData}>
               <defs>
                 <linearGradient id="gT" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#F0A500" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="#F0A500" stopOpacity={0} />
+                  <stop offset="5%"  stopColor="#F0A500" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#F0A500" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="gV" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00FFB2" stopOpacity={0.2} />
-                  <stop offset="100%" stopColor="#00FFB2" stopOpacity={0} />
+                  <stop offset="5%"  stopColor="#00FFB2" stopOpacity={0.12} />
+                  <stop offset="95%" stopColor="#00FFB2" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <XAxis dataKey="hour" tick={{ fill: '#4A4845', fontSize: 9, fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} interval={3} />
-              <YAxis tick={{ fill: '#4A4845', fontSize: 9, fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="hour" tick={{ fontFamily: "'Space Mono', monospace", fontSize: '0.55rem', fill: '#4A4845' }} interval={5} />
+              <YAxis tick={{ fontFamily: "'Space Mono', monospace", fontSize: '0.6rem', fill: '#4A4845' }} />
               <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="tasks"    name="Tasks"    stroke="#F0A500" strokeWidth={1.5} fill="url(#gT)" />
-              <Area type="monotone" dataKey="verified" name="Verified" stroke="#00FFB2" strokeWidth={1.5} fill="url(#gV)" />
+              <Area type="monotone" dataKey="tasks"    stroke="#F0A500" strokeWidth={1.5} fill="url(#gT)" name="Tasks" />
+              <Area type="monotone" dataKey="verified" stroke="#00FFB2" strokeWidth={1.5} fill="url(#gV)" name="Verified" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Robot type donut */}
         <div className="card" style={{ padding: '1.5rem' }}>
-          <div className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F0A500', marginBottom: '1.25rem' }}>
-            Robot Type Distribution
-          </div>
-          <ResponsiveContainer width="100%" height={170}>
-            <PieChart>
-              <Pie data={ROBOT_DIST} cx="50%" cy="50%" innerRadius={50} outerRadius={75} dataKey="value" paddingAngle={2}>
-                {ROBOT_DIST.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.75rem' }}>
-            {ROBOT_DIST.map((d, i) => (
-              <div key={d.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{ width: 8, height: 8, borderRadius: 1, background: COLORS[i % COLORS.length] }} />
-                  <span style={{ fontSize: '0.76rem', color: '#7A7570' }}>{d.name}</span>
-                </div>
-                <span className="f-mono" style={{ fontSize: '0.65rem', color: '#E2DDD6' }}>{d.value}</span>
+          <div className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F0A500', marginBottom: '1.25rem' }}>Robot Types (Onchain)</div>
+          {robotDistData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie data={robotDistData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={3}>
+                  {robotDistData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A4845', fontFamily: "'Space Mono', monospace", fontSize: '0.7rem' }}>
+              {loading ? 'Loading...' : 'No robots yet'}
+            </div>
+          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+            {robotDistData.map((d, i) => (
+              <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: COLORS[i % COLORS.length] }} />
+                <span className="f-mono" style={{ fontSize: '0.58rem', color: '#5A5550' }}>{d.name} ({d.value})</span>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Tasks by category bar chart */}
-      <div className="card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
-        <div className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F0A500', marginBottom: '1.25rem' }}>
-          Tasks by Category (All-Time)
+      {/* Task distribution */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }} className="chart-row">
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <div className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F0A500', marginBottom: '1.25rem' }}>Tasks by Category (Real)</div>
+          {taskDistData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={taskDistData} layout="vertical">
+                <XAxis type="number" tick={{ fontFamily: "'Space Mono', monospace", fontSize: '0.55rem', fill: '#4A4845' }} />
+                <YAxis type="category" dataKey="name" tick={{ fontFamily: "'Space Mono', monospace", fontSize: '0.58rem', fill: '#5A5550' }} width={80} />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="count" fill="#F0A500" name="Tasks" radius={[0, 2, 2, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A4845', fontFamily: "'Space Mono', monospace", fontSize: '0.7rem' }}>
+              {loading ? 'Firebase se load ho raha hai...' : 'No tasks submitted yet'}
+            </div>
+          )}
         </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={TASKS_BY_CAT}>
-            <XAxis dataKey="name" tick={{ fill: '#4A4845', fontSize: 9, fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: '#4A4845', fontSize: 9, fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="count" name="Tasks" radius={[2, 2, 0, 0]}>
-              {TASKS_BY_CAT.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+
+        {/* Top Robots */}
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <div className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F0A500', marginBottom: '1.25rem' }}>
+            Top Robots (Firebase Live)
+          </div>
+          {topRobots.length === 0 ? (
+            <div style={{ color: '#4A4845', fontFamily: "'Space Mono', monospace", fontSize: '0.7rem', padding: '2rem 0', textAlign: 'center' }}>
+              {loading ? 'Loading...' : 'No robots registered yet'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {topRobots.map((r, i) => {
+                const repScore = Math.round((r.repData.score || 0) * 100);
+                return (
+                  <div key={r.robot_id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0', borderBottom: i < topRobots.length - 1 ? '1px solid rgba(240,165,0,0.06)' : 'none' }}>
+                    <div className="f-mono" style={{ fontSize: '0.7rem', color: '#5A5550', width: 20 }}>#{i + 1}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.82rem', color: '#D0C8C0', fontWeight: 500, marginBottom: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.rName}
+                      </div>
+                      <div className="f-mono" style={{ fontSize: '0.58rem', color: '#4A4845' }}>{r.rType} · {r.repData.total_tasks} tasks</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div className="f-mono" style={{ fontSize: '0.8rem', color: '#F0A500' }}>{repScore}</div>
+                      <div className="f-mono" style={{ fontSize: '0.55rem', color: '#4A4845' }}>REP</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Top robots leaderboard */}
+      {/* Recent memory entries */}
       <div className="card" style={{ padding: '1.5rem' }}>
         <div className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F0A500', marginBottom: '1.25rem' }}>
-          Top Performers — Reputation Leaderboard
+          Recent Onchain Entries (Firebase Realtime)
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          <div className="f-mono" style={{
-            fontSize: '0.58rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#3A3835',
-            display: 'grid', gridTemplateColumns: '28px 1fr 80px 80px 80px 80px',
-            gap: '1rem', padding: '0.5rem 0.75rem', borderBottom: '1px solid rgba(240,165,0,0.08)',
-          }}>
-            <span>#</span><span>Robot</span><span>Type</span><span>Tasks</span><span>Success</span><span>REP</span>
+        {memories.length === 0 ? (
+          <div style={{ color: '#4A4845', fontFamily: "'Space Mono', monospace", fontSize: '0.7rem', padding: '1.5rem 0', textAlign: 'center' }}>
+            {loading ? 'Loading from Firebase...' : 'No memory entries yet — PoPW Submit karo'}
           </div>
-          {topRobots.map((r, i) => {
-            const score = reputationScore(r);
-            const RANK_COLORS = ['#F0A500', '#D0C8C0', '#C8814A', '#5A5550', '#5A5550'];
-            return (
-              <div key={r.id} style={{
-                display: 'grid', gridTemplateColumns: '28px 1fr 80px 80px 80px 80px',
-                gap: '1rem', padding: '0.85rem 0.75rem', borderBottom: '1px solid rgba(240,165,0,0.05)',
-                background: i === 0 ? 'rgba(240,165,0,0.03)' : 'transparent',
-              }}>
-                <div className="f-display" style={{ fontSize: '1.1rem', color: RANK_COLORS[i], lineHeight: 1 }}>{i + 1}</div>
-                <div>
-                  <div style={{ fontSize: '0.85rem', color: '#D0C8C0' }}>{r.name}</div>
-                  <div className="f-mono" style={{ fontSize: '0.56rem', color: '#3A3835' }}>{r.id.slice(0, 20)}...</div>
-                </div>
-                <div style={{ fontSize: '0.76rem', color: '#6A6560', alignSelf: 'center' }}>{r.type.split(' ')[0]}</div>
-                <div className="f-display" style={{ fontSize: '1.1rem', color: '#E2DDD6', alignSelf: 'center' }}>{r.tasks}</div>
-                <div className="f-display" style={{ fontSize: '1.1rem', color: '#00FFB2', alignSelf: 'center' }}>{r.successRate}%</div>
-                <div style={{ alignSelf: 'center' }}>
-                  <div className="f-display" style={{ fontSize: '1.1rem', color: '#F0A500', lineHeight: 1 }}>{score}</div>
-                  <div style={{ height: 2, background: '#1A1D2A', borderRadius: 1, marginTop: '0.3rem' }}>
-                    <div style={{ height: '100%', width: `${score}%`, background: '#F0A500', borderRadius: 1 }} />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: "'Space Mono', monospace", fontSize: '0.68rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(240,165,0,0.1)' }}>
+                  {['Task ID', 'Robot', 'Type', 'PoPW Score', 'Block', 'Status'].map(h => (
+                    <th key={h} style={{ padding: '0.5rem 0.75rem', color: '#5A5550', fontWeight: 400, textAlign: 'left', fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {memories.slice(0, 10).map((m, i) => {
+                  const robot = robots.find(r => r.robot_id === (m.robot_id || m.robotId));
+                  const rName = robot ? (robot.metadata?.label || robot.name) : (m.robotName || 'Unknown');
+                  const score = typeof m.popw_score === 'number' ? (m.popw_score > 1 ? m.popw_score : Math.round(m.popw_score * 100)) : '—';
+                  const scoreColor = score >= 70 ? '#00FFB2' : score >= 50 ? '#F0A500' : '#FF4D6A';
+                  const outcome = m.outcome || (m.popw_score >= 0.5 ? 'SUCCESS' : 'FAILED');
+                  const outcomeC = outcome === 'SUCCESS' ? '#00FFB2' : outcome === 'PARTIAL' ? '#F0A500' : '#FF4D6A';
+                  return (
+                    <tr key={m.task_id || i} style={{ borderBottom: '1px solid rgba(240,165,0,0.04)' }}>
+                      <td style={{ padding: '0.5rem 0.75rem', color: '#4D9FFF' }}>
+                        {m.tx_hash ? (
+                          <a href={explorerTxUrl(m.tx_hash)} target="_blank" rel="noopener noreferrer" style={{ color: '#4D9FFF' }}>
+                            {(m.task_id || '').slice(0, 14)}…
+                          </a>
+                        ) : (m.task_id || '').slice(0, 14)}
+                      </td>
+                      <td style={{ padding: '0.5rem 0.75rem', color: '#D0C8C0' }}>{rName}</td>
+                      <td style={{ padding: '0.5rem 0.75rem', color: '#5A5550', fontSize: '0.6rem' }}>{(m.task_type || m.taskType || '').split(' ').slice(0, 2).join(' ')}</td>
+                      <td style={{ padding: '0.5rem 0.75rem', color: scoreColor }}>{score}</td>
+                      <td style={{ padding: '0.5rem 0.75rem', color: '#5A5550' }}>#{m.block_number || '—'}</td>
+                      <td style={{ padding: '0.5rem 0.75rem', color: outcomeC, fontSize: '0.6rem' }}>{outcome}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <style>{`
         .chart-row { grid-template-columns: 1fr 380px; }
         @media(max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
       `}</style>
     </div>
   );
