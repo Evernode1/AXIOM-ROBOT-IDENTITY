@@ -1,7 +1,12 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Cpu, Shield, Brain, Network, Zap, ChevronRight, ArrowRight } from 'lucide-react';
+import {
+  CHAIN, DB,
+  loadDB, attachRealtimeListeners, initChain,
+  on, off,
+} from '@/lib/chain';
 
 const FEATURES = [
   {
@@ -37,12 +42,7 @@ const STEPS = [
   { n: '04', title: 'Accrue', body: 'Reputation score grows with each verified task. Memory becomes a tradable, composable asset in the Konnex ecosystem.' },
 ];
 
-const STATS = [
-  { label: 'Robots Registered', value: 847, suffix: '' },
-  { label: 'Tasks Logged', value: 24891, suffix: '' },
-  { label: 'PoPW Verified', value: 23104, suffix: '' },
-  { label: 'Uptime', value: 99.97, suffix: '%' },
-];
+// STATS are now dynamic — fetched from Firebase in component
 
 function Counter({ target, suffix }) {
   const [val, setVal] = useState(0);
@@ -64,7 +64,44 @@ function Counter({ target, suffix }) {
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const [liveBlock, setLiveBlock]   = useState(null);
+  const [chainStats, setChainStats] = useState({ robots: 0, tasks: 0, verified: 0 });
+
+  const updateStats = useCallback(() => {
+    const tasks = DB.memory.length;
+    const verified = DB.memory.filter(m => m.outcome === 'SUCCESS' || m.popw_score >= 0.5).length;
+    setChainStats({ robots: DB.robots.length, tasks, verified });
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
+    const onBlock  = blk => setLiveBlock(blk);
+    const onRobots = () => updateStats();
+    const onMem    = () => updateStats();
+    on('chain:block',    onBlock);
+    on('robots:updated', onRobots);
+    on('memory:updated', onMem);
+
+    (async () => {
+      await initChain();
+      await loadDB();
+      attachRealtimeListeners();
+      updateStats();
+    })();
+
+    return () => {
+      off('chain:block',    onBlock);
+      off('robots:updated', onRobots);
+      off('memory:updated', onMem);
+    };
+  }, [updateStats]);
+
+  const STATS = [
+    { label: 'Robots Registered', value: chainStats.robots, suffix: '' },
+    { label: 'Tasks Logged',      value: chainStats.tasks,  suffix: '' },
+    { label: 'PoPW Verified',     value: chainStats.verified, suffix: '' },
+    { label: 'Network',           value: 'LIVE', suffix: '', isText: true },
+  ];
 
   return (
     <div style={{ paddingTop: 64 }}>
@@ -138,7 +175,7 @@ export default function Home() {
           <div style={{ marginTop: '3rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#00FFB2', boxShadow: '0 0 8px #00FFB2' }} className="anim-pulse" />
             <span className="f-mono" style={{ fontSize: '0.62rem', color: '#4A4845', letterSpacing: '0.12em' }}>
-              AXIOM SUBNET · BLOCK #{(1284750 + (mounted ? Math.floor(Date.now() / 6000) % 100 : 0)).toLocaleString()} · {mounted ? new Date().toUTCString().slice(0, -4) : 'UTC'} UTC
+              AXIOM SUBNET · BLOCK #{liveBlock ? liveBlock.toLocaleString() : '—'} · {mounted ? new Date().toUTCString().slice(0, -4) : 'UTC'} UTC
             </span>
           </div>
         </div>
@@ -152,8 +189,8 @@ export default function Home() {
               padding: '2rem 1.5rem',
               borderRight: i < STATS.length - 1 ? '1px solid rgba(240,165,0,0.08)' : 'none',
             }}>
-              <div className="f-display" style={{ fontSize: '2.8rem', color: '#F0A500', lineHeight: 1 }}>
-                {mounted ? <Counter target={s.value} suffix={s.suffix} /> : '—'}
+              <div className="f-display" style={{ fontSize: s.isText ? '1.8rem' : '2.8rem', color: s.isText ? '#00FFB2' : '#F0A500', lineHeight: 1 }}>
+                {s.isText ? s.value : (mounted ? <Counter target={s.value} suffix={s.suffix} /> : '—')}
               </div>
               <div className="f-mono" style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#5A5550', marginTop: '0.4rem' }}>
                 {s.label}
