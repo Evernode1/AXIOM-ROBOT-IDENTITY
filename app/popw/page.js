@@ -16,7 +16,7 @@ import {
 import {
   WALLET, CHAIN, EXPLORER,
   sendExtrinsic, initChain,
-  fbSaveMemory, loadDB, DB,
+  fbSaveMemory, fbSaveReputation, loadDB, DB,
   chainHash,
   on, off,
 } from '@/lib/chain';
@@ -85,9 +85,19 @@ export default function PoPW() {
     // ── Load robots from Firebase (source of truth) ──────────────────
     (async () => {
       await loadDB();
-      setRobots([...DB.robots]);
+      const loadedRobots = [...DB.robots];
+      setRobots(loadedRobots);
       setMemories([...DB.memory].sort((a, b) => b.timestamp - a.timestamp));
       setSynced(true);
+
+      // ── Auto-select Unitree robot if registered ───────────────────
+      const unitree = loadedRobots.find(r =>
+        (r.metadata?.label || r.name || '').toLowerCase().includes('unitree') ||
+        (r.metadata?.type  || r.type  || '').toLowerCase().includes('unitree')
+      );
+      if (unitree) {
+        setForm(prev => ({ ...prev, robotId: unitree.robot_id || unitree.id }));
+      }
     })();
 
     // ── Listen for real-time Firebase updates ─────────────────────────
@@ -269,6 +279,39 @@ export default function PoPW() {
     // Persist: Firebase (global) + Vercel KV (index)
     await fbSaveMemory(newMem).catch(console.warn);
     await addItem('memories', newMem).catch(console.warn);
+
+    // ── Update reputation + robot task count ──────────────────────────
+    const success = finalScore >= 0.5;
+    const DECAY = 0.95;
+    const W = { safety: 0.40, match: 0.35, efficiency: 0.25 };
+
+    // Rep update (same formula as chain.js submitPoPWOnchain)
+    if (!DB.reputation[form.robotId]) {
+      DB.reputation[form.robotId] = { score: 0, total_tasks: 0, successful_tasks: 0, last_updated: new Date().toISOString() };
+    }
+    const rep = DB.reputation[form.robotId];
+    const raw = finalScore * W.safety + finalScore * W.match + finalScore * W.efficiency; // all scores derived from finalScore here
+    rep.score = +Math.min(1, Math.max(0, DECAY * rep.score + (1 - DECAY) * raw)).toFixed(4);
+    rep.total_tasks = (rep.total_tasks || 0) + 1;
+    if (success) rep.successful_tasks = (rep.successful_tasks || 0) + 1;
+    rep.last_updated = new Date().toISOString();
+    await fbSaveReputation(form.robotId, rep).catch(console.warn);
+
+    // Robot task count update in DB + Firebase
+    const robotIdx = DB.robots.findIndex(r => (r.robot_id || r.id) === form.robotId);
+    if (robotIdx >= 0) {
+      const updatedRobot = {
+        ...DB.robots[robotIdx],
+        total_tasks:      (DB.robots[robotIdx].total_tasks || 0) + 1,
+        successful_tasks: success ? (DB.robots[robotIdx].successful_tasks || 0) + 1 : (DB.robots[robotIdx].successful_tasks || 0),
+        last_task_at:     new Date().toISOString(),
+      };
+      DB.robots[robotIdx] = updatedRobot;
+      // Save updated robot to Firebase
+      const { fbSaveRobot } = await import('@/lib/chain');
+      await fbSaveRobot(updatedRobot).catch(console.warn);
+      setRobots([...DB.robots]);
+    }
 
     setMemories(prev => [newMem, ...prev]);
     setResult(newMem);
