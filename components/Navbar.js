@@ -10,12 +10,13 @@ import {
 } from '@/lib/chain';
 
 const NAV_LINKS = [
-  { href: '/',           label: 'Home'        },
-  { href: '/registry',   label: 'Registry'    },
-  { href: '/memory',     label: 'Memory Vault'},
-  { href: '/fleet',      label: 'Fleet'       },
-  { href: '/popw',       label: 'PoPW Submit' },
-  { href: '/validators', label: 'Validators'  },
+  { href: '/',                     label: 'Home'            },
+  { href: '/registry',             label: 'Registry'        },
+  { href: '/memory',               label: 'Memory Vault'    },
+  { href: '/fleet',                label: 'Fleet'           },
+  { href: '/popw',                 label: 'PoPW Submit'     },
+  { href: '/validators',           label: 'Validators'      },
+  { href: '/validators/register',  label: 'Val. Register', badge: 'NEW' },
 ];
 
 const WALLETS = [
