@@ -35,6 +35,9 @@ export default function Footer() {
                 {l}
               </Link>
             ))}
+            <Link href="/team" className="axiom-footer-link" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              Team
+            </Link>
           </div>
 
           {/* Konnex */}
