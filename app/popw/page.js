@@ -315,8 +315,44 @@ export default function PoPW() {
   }
 
   // ─── Derived ───────────────────────────────────────────────────────────────
+  // axiom_memory entries => virtual completed tasks
+  // Memory schema: robot_id, task_id, task_type, instruction, popw_score,
+  //                executed_at, tx_hash, block_number, ipfs_cid, timestamp
+  const memoryAsCompletedTasks = memories.map(m => {
+    const memTaskId = m.task_id || m.id;
+    // Skip if already in axiom_tasks as completed
+    const alreadyDone = tasks.find(t => t.task_id === memTaskId && t.status === 'completed');
+    if (alreadyDone) return null;
+    // executed_at (fleet entries) or timestamp (new entries)
+    const doneAt = m.executed_at
+      || (m.timestamp ? new Date(m.timestamp).toISOString() : null)
+      || new Date().toISOString();
+    return {
+      task_id:       memTaskId,
+      instruction:   m.instruction || m.description || m.task_type || m.taskType || 'Task execution',
+      task_type:     m.task_type   || m.taskType   || 'Unknown',
+      reward_knx:    0,
+      status:        'completed',
+      created_at:    doneAt,
+      completed_at:  doneAt,
+      completed_by:  m.robot_id   || m.robotId,
+      popw_score:    m.popw_score,
+      tx_hash:       m.tx_hash    || null,
+      score_tx_hash: m.score_tx_hash || null,
+      ipfs_cid:      m.ipfs_cid   || null,
+      block_number:  m.block_number || null,
+      _fromMemory:   true,
+      _memEntry:     m,
+    };
+  }).filter(Boolean);
+
+  const allCompletedTasks = [
+    ...tasks.filter(t => t.status === 'completed'),
+    ...memoryAsCompletedTasks,
+  ].sort((a, b) => new Date(b.completed_at || b.created_at) - new Date(a.completed_at || a.created_at));
+
   const openTasks      = tasks.filter(t => t.status === 'open');
-  const completedTasks = tasks.filter(t => t.status === 'completed');
+  const completedTasks = allCompletedTasks;
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
   return (
@@ -374,10 +410,10 @@ export default function PoPW() {
           {/* Stats */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '1px', background: 'rgba(240,165,0,0.08)', marginBottom: '2rem' }}>
             {[
-              { label: 'Total Tasks',    value: tasks.length,      color: '#E2DDD6' },
+              { label: 'Total Tasks',   value: openTasks.length + completedTasks.length, color: '#E2DDD6' },
               { label: 'Open',           value: openTasks.length,  color: C.gold },
               { label: 'Completed',      value: completedTasks.length, color: C.green },
-              { label: 'Completion Rate', value: tasks.length ? `${Math.round(completedTasks.length / tasks.length * 100)}%` : '0%', color: C.blue },
+              { label: 'PoPW Verified', value: memories.length, color: C.blue },
             ].map((s, i) => (
               <div key={s.label} style={{ padding: '1.1rem 1.3rem', background: '#101525', borderRight: i < 3 ? `1px solid rgba(240,165,0,0.06)` : 'none' }}>
                 <div className="f-display" style={{ fontSize: '1.7rem', color: s.color, lineHeight: 1 }}>{s.value}</div>
@@ -703,29 +739,73 @@ export default function PoPW() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 {completedTasks.map(task => {
                   const completedRobot = task.completed_by ? robots.find(r => (r.robot_id || r.id) === task.completed_by) : null;
-                  const mem = memories.find(m => m.robot_id === task.completed_by && m.task_type === task.task_type);
+                  // memory entry — prefer direct match from _fromMemory tasks, else search
+                  // Use _memEntry directly for memory-derived tasks (most accurate)
+                  const mem = task._memEntry
+                    || memories.find(m => m.task_id === task.task_id)
+                    || memories.find(m => (m.robot_id || m.robotId) === task.completed_by
+                         && (m.task_type || m.taskType) === task.task_type);
+                  const txHash   = task.tx_hash   || mem?.tx_hash;
+                  const ipfsCid  = task.ipfs_cid  || mem?.ipfs_cid;
+                  const blkNum   = task.block_number || mem?.block_number;
+                  const rawScore = task.popw_score ?? mem?.popw_score;
+                  const scoreDisplay = rawScore != null
+                    ? (typeof rawScore === 'number' && rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore))
+                    : null;
                   return (
-                    <div key={task.task_id} className="card" style={{ padding: '0.9rem 1.25rem', borderLeft: `3px solid rgba(0,255,178,0.4)`, display: 'flex', alignItems: 'flex-start', gap: '0.9rem', opacity: 0.82 }}>
-                      <CheckCircle size={14} color={C.green} style={{ flexShrink: 0, marginTop: '0.2rem' }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.3rem', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '0.82rem', color: '#7A7570', textDecoration: 'line-through' }}>{task.instruction}</span>
-                          <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-                            {task.popw_score != null && (
-                              <span className="tag tag-green" style={{ fontSize: '0.54rem' }}>PoPW {typeof task.popw_score === 'number' && task.popw_score <= 1 ? Math.round(task.popw_score * 100) : Math.round(task.popw_score)}</span>
-                            )}
-                            <span className="tag tag-green" style={{ fontSize: '0.54rem', opacity: 0.7 }}>DONE</span>
+                    <div key={task.task_id} className="card" style={{ padding: '0.9rem 1.25rem', borderLeft: `3px solid rgba(0,255,178,0.4)`, opacity: 0.88 }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.9rem' }}>
+                        <CheckCircle size={14} color={C.green} style={{ flexShrink: 0, marginTop: '0.2rem' }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.82rem', color: '#7A7570', textDecoration: 'line-through' }}>
+                              {task.instruction || task.task_type || 'Task execution'}
+                            </span>
+                            <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                              {scoreDisplay != null && (
+                                <span className="tag tag-green" style={{ fontSize: '0.54rem' }}>PoPW {scoreDisplay}</span>
+                              )}
+                              {task._fromMemory && <span className="tag tag-blue" style={{ fontSize: '0.52rem' }}>verified</span>}
+                              <span className="tag tag-green" style={{ fontSize: '0.54rem', opacity: 0.7 }}>DONE</span>
+                            </div>
                           </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                          <span className="f-mono" style={{ fontSize: '0.58rem', color: '#3A3835' }}>{task.task_type}</span>
-                          {completedRobot && <span className="f-mono" style={{ fontSize: '0.58rem', color: C.blue }}>by {completedRobot.metadata?.label || completedRobot.name}</span>}
-                          {task.completed_at && <span className="f-mono" style={{ fontSize: '0.55rem', color: '#2A2825' }}>{new Date(task.completed_at).toLocaleString()}</span>}
-                          {mem?.tx_hash && (
-                            <a href={`${EXPLORER}/explorer?tx=${mem.tx_hash}`} target="_blank" rel="noreferrer"
-                              style={{ fontFamily: "'Space Mono',monospace", fontSize: '0.55rem', color: C.blue, textDecoration: 'none' }}>
-                              ↗ explorer
-                            </a>
+
+                          <div style={{ display: 'flex', gap: '0.85rem', flexWrap: 'wrap', marginBottom: blkNum || ipfsCid ? '0.45rem' : 0 }}>
+                            <span className="f-mono" style={{ fontSize: '0.58rem', color: '#3A3835' }}>{task.task_type}</span>
+                            {completedRobot && (
+                              <span className="f-mono" style={{ fontSize: '0.58rem', color: C.blue }}>
+                                by {completedRobot.metadata?.label || completedRobot.name}
+                              </span>
+                            )}
+                            {task.completed_at && (
+                              <span className="f-mono" style={{ fontSize: '0.55rem', color: '#2A2825' }}>
+                                {new Date(task.completed_at).toLocaleString()}
+                              </span>
+                            )}
+                            {txHash && (
+                              <a href={`${EXPLORER}/explorer?tx=${txHash}`} target="_blank" rel="noreferrer"
+                                style={{ fontFamily: "'Space Mono',monospace", fontSize: '0.55rem', color: C.blue, textDecoration: 'none' }}>
+                                ↗ explorer
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Onchain + IPFS details */}
+                          {(blkNum || ipfsCid) && (
+                            <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
+                              {blkNum && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                  <Database size={9} color={C.blue} />
+                                  <span className="f-mono" style={{ fontSize: '0.54rem', color: '#3A3835' }}>Block #{blkNum?.toLocaleString()}</span>
+                                </div>
+                              )}
+                              {ipfsCid && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                  <Globe size={9} color={C.gold} />
+                                  <span className="f-mono" style={{ fontSize: '0.54rem', color: '#3A3835' }}>{trunc(ipfsCid, 8, 4)}</span>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -736,7 +816,7 @@ export default function PoPW() {
             </div>
           )}
 
-          {tasks.length === 0 && (
+          {openTasks.length === 0 && completedTasks.length === 0 && (
             <div style={{ padding: '3rem', textAlign: 'center', color: '#3A3835', fontFamily: "'Space Mono',monospace", fontSize: '0.72rem', border: '1px dashed rgba(240,165,0,0.1)', borderRadius: 8 }}>
               No tasks yet — go to "Post New Task" tab to add one.
             </div>
@@ -902,4 +982,3 @@ export default function PoPW() {
     </div>
   );
 }
-
