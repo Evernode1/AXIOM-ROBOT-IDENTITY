@@ -6,12 +6,10 @@ import { Cpu, Github, Twitter, Mail, Shield, Users, Zap, ExternalLink, ChevronRi
 const TEAM = [
   {
     id: 'founder',
-    role: 'FOUNDER',
+    role: 'FOUNDER & LEAD DEVELOPER',
     name: 'Salma Perveen',
     handle: '@betechfinder',
     initials: 'SP',
-    badge: 'FOUNDER',
-    badgeColor: '#F0A500',
     bio: 'Visionary behind AXIOM — full-stack Web3 developer building the Robot Identity Layer on Konnex Substrate chain. Architect of the PoPW pipeline, on-chain integrations, and the AXIOM ecosystem.',
     skills: ['Next.js', 'Substrate', 'Firebase', 'Smart Contracts', 'Web3'],
     links: {
@@ -20,8 +18,7 @@ const TEAM = [
       twitter: 'https://x.com/betechfinder',
     },
     accent: '#F0A500',
-    glow: 'rgba(240,165,0,0.15)',
-    order: 1,
+    glow: 'rgba(240,165,0,0.12)',
   },
   {
     id: 'cofounder',
@@ -29,14 +26,11 @@ const TEAM = [
     name: 'Rai Muhammad Nawaz',
     handle: '@RMNawaz',
     initials: 'RN',
-    badge: 'CO-FOUNDER',
-    badgeColor: '#00FFB2',
     bio: 'Co-architect of the AXIOM protocol. Drives the strategic direction of the Konnex chain integration, validator systems, and the decentralized robot registry infrastructure.',
     skills: ['Protocol Design', 'Blockchain', 'Validator Networks', 'System Architecture'],
     links: {},
     accent: '#00FFB2',
-    glow: 'rgba(0,255,178,0.12)',
-    order: 2,
+    glow: 'rgba(0,255,178,0.1)',
   },
   {
     id: 'member',
@@ -44,65 +38,50 @@ const TEAM = [
     name: 'Muhammad Yasin',
     handle: '@MYasin',
     initials: 'MY',
-    badge: 'ENGINEER',
-    badgeColor: '#4D9FFF',
     bio: 'Core contributor to the AXIOM platform. Works across the full stack — from frontend components to on-chain transaction flows — ensuring the robot identity pipeline runs seamlessly.',
     skills: ['Frontend', 'React', 'API Integration', 'Testing', 'DevOps'],
     links: {},
     accent: '#4D9FFF',
-    glow: 'rgba(77,159,255,0.12)',
-    order: 3,
+    glow: 'rgba(77,159,255,0.1)',
   },
 ];
 
 const C = {
-  bg:     '#06080F',
-  bg2:    '#0B0E1A',
-  bg3:    '#101525',
-  gold:   '#F0A500',
-  green:  '#00FFB2',
-  blue:   '#4D9FFF',
-  red:    '#FF4D6A',
-  txt:    '#E2DDD6',
-  txt2:   '#7A7570',
-  txt3:   '#3A3835',
+  bg: '#06080F',
+  bg2: '#0B0E1A',
+  bg3: '#101525',
+  gold: '#F0A500',
+  green: '#00FFB2',
+  blue: '#4D9FFF',
+  txt: '#E2DDD6',
+  txt2: '#7A7570',
   border: 'rgba(240,165,0,0.12)',
 };
 
-function Avatar({ member, size = 96 }) {
+function Avatar({ member, size }) {
+  const s = size || 88;
   return (
-    <div style={{
-      width: size, height: size, flexShrink: 0, position: 'relative',
-    }}>
-      {/* Outer ring */}
-      <div style={{
-        position: 'absolute', inset: -3,
-        border: `1px solid ${member.accent}40`,
-        clipPath: 'polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px))',
-        animation: 'rotateRing 8s linear infinite',
-      }} />
-      {/* Avatar body */}
+    <div style={{ width: s, height: s, flexShrink: 0, position: 'relative' }}>
       <div style={{
         width: '100%', height: '100%',
-        background: `linear-gradient(135deg, ${member.glow}, rgba(0,0,0,0.6))`,
-        border: `1px solid ${member.accent}50`,
+        background: member.glow,
+        border: '1px solid ' + member.accent + '50',
         clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px))',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         position: 'relative', overflow: 'hidden',
       }}>
-        {/* Scan line effect */}
         <div style={{
           position: 'absolute', inset: 0,
-          background: `repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px)`,
+          background: 'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px)',
           pointerEvents: 'none',
         }} />
         <span style={{
           fontFamily: "'Bebas Neue', sans-serif",
-          fontSize: size * 0.3,
+          fontSize: s * 0.28,
           color: member.accent,
           letterSpacing: '0.06em',
           position: 'relative', zIndex: 1,
-          textShadow: `0 0 20px ${member.accent}`,
+          textShadow: '0 0 20px ' + member.accent,
         }}>
           {member.initials}
         </span>
@@ -111,170 +90,74 @@ function Avatar({ member, size = 96 }) {
   );
 }
 
-function StatPill({ label, value, color }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      background: `${color}0A`, border: `1px solid ${color}20`,
-      borderRadius: 6, padding: '5px 10px',
-    }}>
-      <div style={{ width: 5, height: 5, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} />
-      <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.6rem', color: C.txt2, letterSpacing: '0.08em' }}>{label}</span>
-      <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.6rem', color, letterSpacing: '0.06em' }}>{value}</span>
-    </div>
-  );
-}
-
-function TeamCard({ member, featured = false }) {
-  const [hovered, setHovered] = useState(false);
-
+function SmallCard({ member }) {
+  const [hov, setHov] = useState(false);
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
       style={{
         background: C.bg3,
-        border: `1px solid ${hovered ? member.accent + '60' : C.border}`,
-        clipPath: 'polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))',
-        padding: featured ? '2.2rem' : '1.75rem',
+        border: '1px solid ' + (hov ? member.accent + '55' : C.border),
+        clipPath: 'polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px))',
+        padding: '1.75rem',
         transition: 'border-color 0.3s, box-shadow 0.3s',
-        boxShadow: hovered ? `0 0 40px ${member.glow}` : '0 0 0 transparent',
+        boxShadow: hov ? '0 0 36px ' + member.glow : 'none',
         position: 'relative', overflow: 'hidden',
-        gridColumn: featured ? 'span 2' : 'span 1',
       }}
     >
-      {/* Corner accent */}
-      <div style={{
-        position: 'absolute', top: 0, right: 0,
-        width: 40, height: 40,
-        borderLeft: `1px solid ${member.accent}30`,
-        borderBottom: `1px solid ${member.accent}30`,
-        clipPath: 'polygon(100% 0, 100% 100%, 0 100%)',
-        background: `${member.accent}08`,
-      }} />
-
-      {/* Ambient glow on hover */}
       <div style={{
         position: 'absolute', inset: 0,
-        background: `radial-gradient(circle at 50% 0%, ${member.glow} 0%, transparent 70%)`,
-        opacity: hovered ? 1 : 0,
+        background: 'radial-gradient(circle at 50% 0%, ' + member.glow + ' 0%, transparent 70%)',
+        opacity: hov ? 1 : 0,
         transition: 'opacity 0.4s',
         pointerEvents: 'none',
       }} />
-
       <div style={{ position: 'relative', zIndex: 1 }}>
-        {/* Header row */}
-        <div style={{ display: 'flex', alignItems: featured ? 'flex-start' : 'flex-start', gap: '1.25rem', marginBottom: '1.25rem' }}>
-          <Avatar member={member} size={featured ? 96 : 72} />
-
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', marginBottom: '1rem' }}>
+          <Avatar member={member} size={72} />
           <div style={{ flex: 1 }}>
-            {/* Role badge */}
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
-              background: `${member.accent}12`, border: `1px solid ${member.accent}30`,
+              background: member.accent + '12', border: '1px solid ' + member.accent + '30',
               borderRadius: 4, padding: '3px 8px', marginBottom: '0.5rem',
             }}>
               <Zap size={10} color={member.accent} />
               <span style={{
                 fontFamily: "'Space Mono', monospace",
-                fontSize: '0.58rem', letterSpacing: '0.14em',
+                fontSize: '0.56rem', letterSpacing: '0.14em',
                 color: member.accent, textTransform: 'uppercase', fontWeight: 700,
-              }}>
-                {member.role}
-              </span>
+              }}>{member.role}</span>
             </div>
-
-            {/* Name */}
             <div style={{
               fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: featured ? '1.8rem' : '1.45rem',
-              letterSpacing: '0.06em', color: C.txt,
-              lineHeight: 1, marginBottom: '0.25rem',
-              textShadow: hovered ? `0 0 30px ${member.accent}40` : 'none',
-              transition: 'text-shadow 0.3s',
-            }}>
-              {member.name}
-            </div>
-
-            {/* Handle */}
+              fontSize: '1.4rem', letterSpacing: '0.06em',
+              color: C.txt, lineHeight: 1, marginBottom: '0.2rem',
+            }}>{member.name}</div>
             <div style={{
               fontFamily: "'Space Mono', monospace",
-              fontSize: '0.68rem', color: C.txt2, marginBottom: '0.75rem',
-            }}>
-              {member.handle}
-            </div>
-
-            {/* Social links */}
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-              {member.links.email && (
-                <a href={`mailto:${member.links.email}`} style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  background: 'rgba(240,165,0,0.06)', border: `1px solid ${C.border}`,
-                  borderRadius: 6, padding: '4px 9px',
-                  fontFamily: "'Space Mono', monospace", fontSize: '0.58rem',
-                  color: C.txt2, textDecoration: 'none', transition: 'all 0.2s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.color = C.gold; e.currentTarget.style.borderColor = 'rgba(240,165,0,0.4)'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = C.txt2; e.currentTarget.style.borderColor = C.border; }}
-                >
-                  <Mail size={10} /> Email
-                </a>
-              )}
-              {member.links.github && (
-                <a href={member.links.github} target="_blank" rel="noreferrer" style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  background: 'rgba(240,165,0,0.06)', border: `1px solid ${C.border}`,
-                  borderRadius: 6, padding: '4px 9px',
-                  fontFamily: "'Space Mono', monospace", fontSize: '0.58rem',
-                  color: C.txt2, textDecoration: 'none', transition: 'all 0.2s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.color = C.gold; e.currentTarget.style.borderColor = 'rgba(240,165,0,0.4)'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = C.txt2; e.currentTarget.style.borderColor = C.border; }}
-                >
-                  <Github size={10} /> GitHub
-                </a>
-              )}
-              {member.links.twitter && (
-                <a href={member.links.twitter} target="_blank" rel="noreferrer" style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  background: 'rgba(240,165,0,0.06)', border: `1px solid ${C.border}`,
-                  borderRadius: 6, padding: '4px 9px',
-                  fontFamily: "'Space Mono', monospace", fontSize: '0.58rem',
-                  color: C.txt2, textDecoration: 'none', transition: 'all 0.2s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.color = C.gold; e.currentTarget.style.borderColor = 'rgba(240,165,0,0.4)'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = C.txt2; e.currentTarget.style.borderColor = C.border; }}
-                >
-                  <Twitter size={10} /> X/Twitter
-                </a>
-              )}
-            </div>
+              fontSize: '0.65rem', color: C.txt2,
+            }}>{member.handle}</div>
           </div>
         </div>
-
-        {/* Bio */}
         <p style={{
           fontFamily: "'DM Sans', sans-serif",
-          fontSize: '0.82rem', color: C.txt2, lineHeight: 1.7,
-          marginBottom: '1.1rem',
-          borderLeft: `2px solid ${member.accent}30`,
+          fontSize: '0.8rem', color: C.txt2, lineHeight: 1.7,
+          marginBottom: '1rem',
+          borderLeft: '2px solid ' + member.accent + '30',
           paddingLeft: '0.75rem',
-        }}>
-          {member.bio}
-        </p>
-
-        {/* Skills */}
+        }}>{member.bio}</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-          {member.skills.map(skill => (
-            <span key={skill} style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: '0.6rem', letterSpacing: '0.06em',
-              background: `${member.accent}08`, border: `1px solid ${member.accent}20`,
-              color: member.accent, borderRadius: 4, padding: '3px 8px',
-            }}>
-              {skill}
-            </span>
-          ))}
+          {member.skills.map(function(skill) {
+            return (
+              <span key={skill} style={{
+                fontFamily: "'Space Mono', monospace",
+                fontSize: '0.58rem', letterSpacing: '0.06em',
+                background: member.accent + '08', border: '1px solid ' + member.accent + '20',
+                color: member.accent, borderRadius: 4, padding: '3px 8px',
+              }}>{skill}</span>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -282,209 +165,240 @@ function TeamCard({ member, featured = false }) {
 }
 
 export default function TeamPage() {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
-
-  const founder = TEAM.find(m => m.id === 'founder');
-  const rest = TEAM.filter(m => m.id !== 'founder');
+  const founder = TEAM[0];
+  const rest = TEAM.slice(1);
 
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        html { scroll-behavior: smooth; }
-        body {
-          background: #06080F;
-          color: #E2DDD6;
-          font-family: 'DM Sans', sans-serif;
-          min-height: 100vh;
-          overflow-x: hidden;
+        @keyframes fadeUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes scanPulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+        .ax-fade0 { animation: fadeUp 0.55s ease 0.05s both; }
+        .ax-fade1 { animation: fadeUp 0.55s ease 0.15s both; }
+        .ax-fade2 { animation: fadeUp 0.55s ease 0.25s both; }
+        .ax-fade3 { animation: fadeUp 0.55s ease 0.4s both; }
+        .ax-fade4 { animation: fadeUp 0.55s ease 0.55s both; }
+        .ax-link {
+          display: inline-flex; align-items: center; gap: 6px;
+          background: rgba(240,165,0,0.06); border: 1px solid rgba(240,165,0,0.2);
+          border-radius: 8px; padding: 7px 14px;
+          font-family: 'Space Mono', monospace; font-size: 0.63rem;
+          color: #7A7570; text-decoration: none; transition: all 0.2s;
         }
-        body::after {
-          content: '';
-          position: fixed; inset: 0;
-          background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 4px);
-          pointer-events: none;
-          z-index: 9998;
-        }
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-track { background: #0B0E1A; }
-        ::-webkit-scrollbar-thumb { background: #F0A500; border-radius: 2px; }
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(24px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes rotateRing {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
-        @keyframes scanline {
-          0%   { transform: translateY(-100%); }
-          100% { transform: translateY(100vh); }
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-        .fade-in { animation: fadeUp 0.6s ease both; }
-        .fade-in-1 { animation: fadeUp 0.6s ease 0.1s both; }
-        .fade-in-2 { animation: fadeUp 0.6s ease 0.2s both; }
-        .fade-in-3 { animation: fadeUp 0.6s ease 0.35s both; }
-        .fade-in-4 { animation: fadeUp 0.6s ease 0.5s both; }
-        @media (max-width: 768px) {
-          .team-grid { grid-template-columns: 1fr !important; }
-          .team-grid > div { grid-column: span 1 !important; }
-          .hero-stats { flex-direction: column; gap: 0.75rem !important; }
+        .ax-link:hover { color: #F0A500; border-color: rgba(240,165,0,0.45); background: rgba(240,165,0,0.1); }
+        .ax-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+        @media (max-width: 720px) {
+          .ax-grid { grid-template-columns: 1fr; }
+          .ax-founder-inner { flex-direction: column !important; }
+          .ax-stats { flex-direction: column; align-items: flex-start !important; }
         }
       `}</style>
 
-      {/* Grid background */}
+      {/* Grid bg */}
       <div style={{
         position: 'fixed', inset: 0, zIndex: 0,
-        backgroundImage: `linear-gradient(rgba(240,165,0,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(240,165,0,0.04) 1px, transparent 1px)`,
-        backgroundSize: '44px 44px',
-        pointerEvents: 'none',
-      }} />
-
-      {/* Scanline sweep */}
-      <div style={{
-        position: 'fixed', top: 0, left: 0, right: 0, height: 2,
-        background: 'linear-gradient(90deg, transparent, rgba(240,165,0,0.3), transparent)',
-        animation: 'scanline 6s linear infinite',
-        zIndex: 1, pointerEvents: 'none',
+        backgroundImage: 'linear-gradient(rgba(240,165,0,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(240,165,0,0.04) 1px, transparent 1px)',
+        backgroundSize: '44px 44px', pointerEvents: 'none',
       }} />
 
       <div style={{ position: 'relative', zIndex: 2, paddingTop: 80 }}>
 
-        {/* ── HERO SECTION ── */}
-        <div style={{
-          maxWidth: 1100, margin: '0 auto', padding: '3rem 1.5rem 2rem',
-          textAlign: 'center',
-        }}>
-          <div className="fade-in" style={{
+        {/* ── HERO ── */}
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '3rem 1.5rem 1.5rem', textAlign: 'center' }}>
+
+          <div className="ax-fade0" style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
             background: 'rgba(240,165,0,0.06)', border: '1px solid rgba(240,165,0,0.2)',
             borderRadius: 6, padding: '5px 14px', marginBottom: '1.25rem',
           }}>
             <Users size={12} color={C.gold} />
-            <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.65rem', color: C.gold, letterSpacing: '0.14em' }}>
-              CORE TEAM
-            </span>
+            <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.63rem', color: C.gold, letterSpacing: '0.14em' }}>CORE TEAM</span>
           </div>
 
-          <h1 className="fade-in-1" style={{
+          <h1 className="ax-fade1" style={{
             fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: 'clamp(2.8rem, 6vw, 5rem)',
-            letterSpacing: '0.06em', color: C.txt, lineHeight: 1,
-            marginBottom: '0.75rem',
+            fontSize: 'clamp(2.6rem, 6vw, 5rem)',
+            letterSpacing: '0.06em', color: C.txt, lineHeight: 1, marginBottom: '0.75rem',
           }}>
             THE{' '}
-            <span style={{ color: C.gold, textShadow: '0 0 40px rgba(240,165,0,0.4)' }}>
-              AXIOM
-            </span>{' '}
-            TEAM
+            <span style={{ color: C.gold, textShadow: '0 0 40px rgba(240,165,0,0.4)' }}>AXIOM</span>
+            {' '}TEAM
           </h1>
 
-          <p className="fade-in-2" style={{
+          <p className="ax-fade2" style={{
             fontFamily: "'DM Sans', sans-serif",
-            fontSize: '0.95rem', color: C.txt2, maxWidth: 540, margin: '0 auto 2rem',
-            lineHeight: 1.7,
+            fontSize: '0.95rem', color: C.txt2,
+            maxWidth: 520, margin: '0 auto 2rem', lineHeight: 1.7,
           }}>
             Building the decentralized Robot Identity Layer on Konnex Substrate chain — one block at a time.
           </p>
 
-          {/* Stats row */}
-          <div className="fade-in-3 hero-stats" style={{
-            display: 'flex', justifyContent: 'center', gap: '1.5rem', flexWrap: 'wrap',
-            marginBottom: '0.5rem',
-          }}>
-            <StatPill label="CHAIN" value="Konnex Testnet" color={C.gold} />
-            <StatPill label="MEMBERS" value="3 Core" color={C.green} />
-            <StatPill label="STATUS" value="Building" color={C.blue} />
-            <StatPill label="NETWORK" value="Substrate" color={C.gold} />
+          {/* Stats */}
+          <div className="ax-fade2 ax-stats" style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+            {[
+              { label: 'CHAIN', val: 'Konnex Testnet', color: C.gold },
+              { label: 'MEMBERS', val: '3 Core', color: C.green },
+              { label: 'STATUS', val: 'Building', color: C.blue },
+            ].map(function(s) {
+              return (
+                <div key={s.label} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  background: s.color + '0A', border: '1px solid ' + s.color + '20',
+                  borderRadius: 6, padding: '5px 12px',
+                }}>
+                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: s.color, boxShadow: '0 0 6px ' + s.color }} />
+                  <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.6rem', color: C.txt2, letterSpacing: '0.08em' }}>{s.label}</span>
+                  <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.6rem', color: s.color }}>{s.val}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
         {/* ── DIVIDER ── */}
-        <div style={{
-          maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem',
-          display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2.5rem',
-        }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
           <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, transparent, rgba(240,165,0,0.2))' }} />
-          <Cpu size={16} color="rgba(240,165,0,0.4)" />
+          <Cpu size={15} color="rgba(240,165,0,0.35)" />
           <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(240,165,0,0.2), transparent)' }} />
         </div>
 
-        {/* ── TEAM GRID ── */}
+        {/* ── CARDS ── */}
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem 4rem' }}>
 
-          {/* Founder — full width featured card */}
-          <div className="fade-in-3" style={{ marginBottom: '1.5rem' }}>
-            <div
-              style={{
-                background: C.bg3,
-                border: `1px solid rgba(240,165,0,0.25)`,
-                clipPath: 'polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px))',
-                padding: '2.5rem',
-                position: 'relative', overflow: 'hidden',
-                boxShadow: '0 0 60px rgba(240,165,0,0.06)',
-              }}
-            >
-              {/* Ambient top glow */}
+          {/* Founder — full width */}
+          <div className="ax-fade3" style={{ marginBottom: '1.25rem' }}>
+            <div style={{
+              background: C.bg3,
+              border: '1px solid rgba(240,165,0,0.22)',
+              clipPath: 'polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px))',
+              padding: '2.25rem',
+              position: 'relative', overflow: 'hidden',
+              boxShadow: '0 0 50px rgba(240,165,0,0.05)',
+            }}>
+              {/* Top glow line */}
               <div style={{
                 position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                width: '60%', height: '1px',
-                background: 'linear-gradient(90deg, transparent, rgba(240,165,0,0.6), transparent)',
+                width: '55%', height: '1px',
+                background: 'linear-gradient(90deg, transparent, rgba(240,165,0,0.55), transparent)',
               }} />
-
-              {/* Corner deco */}
+              {/* Corner */}
               <div style={{
-                position: 'absolute', top: 0, right: 0,
-                width: 60, height: 60,
-                borderLeft: '1px solid rgba(240,165,0,0.2)',
-                borderBottom: '1px solid rgba(240,165,0,0.2)',
+                position: 'absolute', top: 0, right: 0, width: 56, height: 56,
+                borderLeft: '1px solid rgba(240,165,0,0.18)',
+                borderBottom: '1px solid rgba(240,165,0,0.18)',
                 clipPath: 'polygon(100% 0, 100% 100%, 0 100%)',
-                background: 'rgba(240,165,0,0.04)',
+                background: 'rgba(240,165,0,0.03)',
               }} />
 
-              <div style={{
-                display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'flex-start',
-                position: 'relative', zIndex: 1,
-              }}>
-                <Avatar member={founder} size={110} />
-
-                <div style={{ flex: 1, minWidth: 260 }}>
+              <div className="ax-founder-inner" style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start', position: 'relative', zIndex: 1 }}>
+                <Avatar member={founder} size={108} />
+                <div style={{ flex: 1 }}>
                   <div style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
-                    background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.35)',
-                    borderRadius: 4, padding: '4px 10px', marginBottom: '0.6rem',
+                    background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.32)',
+                    borderRadius: 4, padding: '4px 10px', marginBottom: '0.55rem',
                   }}>
                     <Shield size={11} color={C.gold} />
-                    <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.6rem', letterSpacing: '0.16em', color: C.gold, fontWeight: 700 }}>
-                      FOUNDER & LEAD DEVELOPER
+                    <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.58rem', letterSpacing: '0.14em', color: C.gold, fontWeight: 700 }}>
+                      {founder.role}
                     </span>
                   </div>
 
                   <div style={{
                     fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 'clamp(2rem, 4vw, 2.8rem)',
+                    fontSize: 'clamp(1.9rem, 4vw, 2.7rem)',
                     letterSpacing: '0.06em', color: C.txt,
-                    lineHeight: 1, marginBottom: '0.3rem',
-                    textShadow: '0 0 40px rgba(240,165,0,0.2)',
-                  }}>
-                    {founder.name}
-                  </div>
+                    lineHeight: 1, marginBottom: '0.25rem',
+                    textShadow: '0 0 35px rgba(240,165,0,0.2)',
+                  }}>{founder.name}</div>
 
-                  <div style={{
-                    fontFamily: "'Space Mono', monospace",
-                    fontSize: '0.72rem', color: C.txt2, marginBottom: '1rem',
-                  }}>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.7rem', color: C.txt2, marginBottom: '0.9rem' }}>
                     {founder.handle}
                   </div>
 
                   <p style={{
                     fontFamily: "'DM Sans', sans-serif",
-                    fontSize: '0.88rem', color: C.txt2, lineHeight: 1.75,
-                    marginBottom: '1.25rem', maxWidth: 580,
-                    bo
+                    fontSize: '0.85rem', color: C.txt2, lineHeight: 1.75,
+                    marginBottom: '1.1rem', maxWidth: 580,
+                    borderLeft: '2px solid rgba(240,165,0,0.22)',
+                    paddingLeft: '0.8rem',
+                  }}>{founder.bio}</p>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '1.1rem' }}>
+                    {founder.skills.map(function(skill) {
+                      return (
+                        <span key={skill} style={{
+                          fontFamily: "'Space Mono', monospace",
+                          fontSize: '0.6rem', letterSpacing: '0.06em',
+                          background: 'rgba(240,165,0,0.07)', border: '1px solid rgba(240,165,0,0.2)',
+                          color: C.gold, borderRadius: 4, padding: '3px 9px',
+                        }}>{skill}</span>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                    <a href={'mailto:' + founder.links.email} className="ax-link">
+                      <Mail size={12} /> {founder.links.email}
+                    </a>
+                    <a href={founder.links.github} target="_blank" rel="noreferrer" className="ax-link">
+                      <Github size={12} /> GitHub <ExternalLink size={10} />
+                    </a>
+                    <a href={founder.links.twitter} target="_blank" rel="noreferrer" className="ax-link">
+                      <Twitter size={12} /> X / Twitter <ExternalLink size={10} />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Co-founder + Member */}
+          <div className="ax-fade4 ax-grid">
+            {rest.map(function(member) {
+              return <SmallCard key={member.id} member={member} />;
+            })}
+          </div>
+
+          {/* Bottom CTA */}
+          <div style={{
+            marginTop: '2.5rem',
+            background: C.bg3,
+            border: '1px solid ' + C.border,
+            clipPath: 'polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px))',
+            padding: '1.5rem 2rem',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem',
+          }}>
+            <div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '1.25rem', letterSpacing: '0.06em', color: C.txt, marginBottom: '0.2rem' }}>
+                EXPLORE THE PROTOCOL
+              </div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.63rem', color: C.txt2 }}>
+                Register robots, submit PoPW, and join the validator network.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <Link href="/registry" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'rgba(240,165,0,0.07)', border: '1px solid rgba(240,165,0,0.28)',
+                borderRadius: 8, padding: '8px 16px',
+                fontFamily: "'Space Mono', monospace", fontSize: '0.66rem',
+                color: C.gold, textDecoration: 'none', letterSpacing: '0.08em',
+              }}>Registry <ChevronRight size={12} /></Link>
+              <Link href="/popw" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'linear-gradient(135deg, #F0A500, #D4920A)',
+                border: 'none', borderRadius: 8, padding: '8px 18px',
+                fontFamily: "'Space Mono', monospace", fontSize: '0.66rem',
+                color: '#000', fontWeight: 700, textDecoration: 'none', letterSpacing: '0.08em',
+              }}>PoPW Submit <ChevronRight size={12} /></Link>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </>
+  );
+}
+
