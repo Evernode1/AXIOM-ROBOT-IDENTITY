@@ -18,6 +18,7 @@ const NAV_LINKS = [
   { href: '/validators',           label: 'Validators'      },
   { href: '/validators/register',  label: 'Val. Register', badge: 'NEW' },
   { href: '/simulator',            label: 'Simulator',     badge: 'NEW' },
+  { href: '/team', label: 'Team' },
 ];
 
 const WALLETS = [
